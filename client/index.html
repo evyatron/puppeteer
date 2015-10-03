@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>Puppeteerer</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    
+    <style>
+      body, div, canvas {
+        margin: 0;
+        padding: 0;
+      }
+      
+      body {
+        -webkit-user-select: none;
+      }
+      
+      canvas {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        background: linear-gradient(to bottom, #a0f0ff, #70d0df);
+      }
+      
+      .calibrate {
+        position: absolute;
+        top: 0;
+        right: 0;
+        padding: 10px;
+        background: #ccc;
+      }
+    </style>
+    <script>
+      /*
+        global gyro
+        global io
+      */
+      (function(a,b){"function"===typeof define&&define.amd?define(b):"object"===typeof exports?module.exports=b():a.gyro=b()})(this,function(){var a={x:null,y:null,z:null,alpha:null,beta:null,gamma:null},b={x:0,y:0,z:0,alpha:0,beta:0,gamma:0},g=null,e=[],h={frequency:500,calibrate:function(){for(var f in a)b[f]="number"===typeof a[f]?a[f]:0},getOrientation:function(){return a},startTracking:function(b){g=setInterval(function(){b(a)},h.frequency)},stopTracking:function(){clearInterval(g)},hasFeature:function(a){for(var b in e)if(a==
+      e[b])return!0;return!1},getFeatures:function(){return e}};window&&window.addEventListener&&function(){function f(d){e.push("MozOrientation");d.target.removeEventListener("MozOrientation",f,!0);d.target.addEventListener("MozOrientation",function(c){a.x=c.x-b.x;a.y=c.y-b.y;a.z=c.z-b.z},!0)}function g(d){e.push("devicemotion");d.target.removeEventListener("devicemotion",g,!0);d.target.addEventListener("devicemotion",function(c){a.x=c.accelerationIncludingGravity.x-b.x;a.y=c.accelerationIncludingGravity.y-
+      b.y;a.z=c.accelerationIncludingGravity.z-b.z},!0)}function h(d){e.push("deviceorientation");d.target.removeEventListener("deviceorientation",h,!0);d.target.addEventListener("deviceorientation",function(c){a.alpha=c.alpha-b.alpha;a.beta=c.beta-b.beta;a.gamma=c.gamma-b.gamma},!0)}window.addEventListener("MozOrientation",f,!0);window.addEventListener("devicemotion",g,!0);window.addEventListener("deviceorientation",h,!0)}();return h});
+    
+      var Client = (function Client() {
+        function Client(options) {
+          this.el;
+          this.localPuppetEl;
+          this.isController = false;
+          this.isView = false;
+          
+          this.socket;
+          
+          this.canvas;
+          this.context;
+          this.lastUpdate = 0;
+          this.dt = 0;
+          
+          this.localPuppet;
+          this.baseLine = {};
+          
+          this.puppets = {};
+          
+          this.angleLerpAlpha = 0.5;
+          
+          this.init(options);
+        }
+        
+        Client.prototype.init = function init(options) {
+          !options && (options = {});
+          
+          this.el = options.el || document.body;
+          this.socket = io.connect();
+          
+          this.canvas = document.createElement('canvas');
+          this.context = this.canvas.getContext('2d');
+          this.el.appendChild(this.canvas);
+          
+          this.lastUpdate = Date.now();
+          window.requestAnimationFrame(this.tick.bind(this));
+          
+          document.querySelector('.calibrate').addEventListener('click', this.calibrate.bind(this));
+          
+          this.socket.on('connect', this.connect.bind(this));
+        };
+        
+        Client.prototype.connect = function connect(data) {
+          var gameId = window.location.search.replace('?', '');
+          
+          this.socket.on('gameInfoToClient', this.gameInfoToClient.bind(this));
+          this.socket.on('gamePuppetsToClient', this.gamePuppetsToClient.bind(this));
+          
+          if ('ontouchstart' in window) {
+            this.startAsController(gameId);
+          } else {
+            this.startAsView(gameId);
+          }
+          
+          if (gameId) {
+            this.socket.emit('connectToGameFromClient', {
+              'gameId': gameId
+            });
+          }
+        };
+        
+        Client.prototype.startAsView = function startAsView(gameId) {
+          console.warn('Start as view');
+          
+          this.isController = false;
+          this.isView = true;
+          
+          this.socket.on('removePlayerToClient', this.removePlayerToClient.bind(this));
+          this.socket.on('removePuppetToClient', this.removePuppetToClient.bind(this));
+          
+          window.addEventListener('resize', this.onResize.bind(this));
+          
+          if (!gameId) {
+            var size = {
+              'width': window.innerWidth,
+              'height': window.innerHeight
+            };
+            
+            this.socket.emit('createGameFromClient', size);
+            this.setSize(size);
+          }
+        };
+        
+        Client.prototype.startAsController = function startAsController(gameId) {
+          console.warn('Start as controller', gameId);
+          
+          if (!gameId) {
+            document.getElementById('game').innerHTML = 'Please type in a valid game id';
+            return;
+          }
+          
+          this.socket.on('resizeGameToClient', this.setSize.bind(this));
+          this.socket.on('possessPuppetToClient', this.possessPuppetToClient.bind(this));
+
+          this.isController = true;
+          this.isView = false;
+
+          this.calibrate();
+          gyro.frequency = 1000 / 30;
+          gyro.startTracking(this.gotMotionInfo.bind(this));
+        };
+        
+        Client.prototype.possessPuppetToClient = function possessPuppetToClient(data) {
+          console.warn('possessPuppetToClient', data.puppetId);
+          this.possessedPuppetId = data.puppetId;
+        };
+        
+        Client.prototype.calibrate = function calibrate() {
+          var info = gyro.getOrientation();
+          for (var k in info) {
+            this.baseLine[k] = info[k] || 0;
+          }
+        };
+
+        Client.prototype.gotMotionInfo = function gotMotionInfo(info) {
+          if (this.possessedPuppetId) {
+            var movementData = {};
+            for (var k in info) {
+              movementData[k] = info[k] - this.baseLine[k];
+            }
+
+            this.socket.emit('movementFromClient', movementData);
+          }
+        };
+        
+        Client.prototype.tick = function tick() {
+          var now = Date.now();
+          this.dt = (now - this.lastUpdate) / 1000;
+          
+          var context = this.context;
+          
+          context.clearRect(0, 0, this.width, this.height);
+
+          for (var id in this.puppets) {
+            var puppet = this.puppets[id];
+
+            puppet.targetAngle = -puppet.movementData.alpha || 0;
+            
+            if (puppet.targetAngle < -180) {
+              puppet.targetAngle = 360 - puppet.targetAngle;
+            } else if (puppet.targetAngle > 180) {
+              puppet.targetAngle = puppet.targetAngle - 360;
+            }
+            
+            puppet.angle += (puppet.targetAngle - puppet.angle) * this.angleLerpAlpha;
+            
+            var ratio = this.ratio;
+            var w = puppet.width * ratio;
+            var h = puppet.height * ratio;
+            var hw = w / 2;
+            var hh = h / 2;
+
+            context.save();
+            
+            context.translate(puppet.x * this.width, puppet.y * this.height);
+            context.rotate(puppet.angle * Math.PI/180);
+            
+            
+            // body
+            context.fillStyle = puppet.colour;
+            context.fillRect(-hw, -hh, w, h * 0.8);
+            // mouth
+            context.fillRect(-hw, -hh + h * 0.8 - 1, w, h * 0.2);
+            // eye
+            context.fillStyle = 'rgba(255, 255, 255, 1)';
+            context.fillRect(-hw + w * 0.15, -hh + h * 0.2, w / 10, h / 10);
+            context.fillStyle = 'rgba(0, 0, 0, 1)';
+            context.fillRect(-hw + w * 0.17, -hh + h * 0.24, w / 30, h / 30);
+            
+            context.restore();
+          }
+          
+          this.lastUpdate = now;
+          window.requestAnimationFrame(this.tick.bind(this));
+        };
+        
+        Client.prototype.gameInfoToClient = function gameInfoToClient(data) {
+          var game = data.game;
+          var gameUrl = 'http://pupeteer.evyatron.c9.io/?' + game.id;
+          
+          var urlGameId = window.location.search.replace('?', '');
+          if (urlGameId !== game.id) {
+            window.history.pushState('', '', '?' + game.id);
+            return;
+          }
+          
+          console.warn('Got game info', game);
+          
+          this.setSize({
+            'width': game.width,
+            'height': game.height
+          });
+          
+          document.getElementById('game').innerHTML = '<a href="' + gameUrl + '" target="_blank">' + gameUrl + '</a>';
+          
+          if (this.isController) {
+            this.socket.emit('addPuppetFromClient', {
+              'type': 'default',
+              'name': 'My Puppet'
+            });
+          }
+        };
+        
+        Client.prototype.addNewPuppet = function addNewPuppet(puppet) {
+          console.warn('addNewPuppet', puppet);
+          
+          this.puppets[puppet.id] = puppet;
+          
+          puppet.targetAngle = puppet.angle = -puppet.movementData.alpha || 0;
+        };
+        
+        Client.prototype.gamePuppetsToClient = function gamePuppetsToClient(puppets) {
+          var puppetId;
+          
+          for (puppetId in puppets) {
+            if (this.puppets[puppetId]) {
+              this.puppets[puppetId].movementData = puppets[puppetId].movementData;
+            } else {
+              this.addNewPuppet(puppets[puppetId]);
+            }
+          }
+          
+          for (puppetId in this.puppets) {
+            if (!puppets[puppetId]) {
+              delete this.puppets[puppetId];
+            }
+          }
+        };
+        
+        Client.prototype.removePlayerToClient = function removePlayerToClient(data) {
+          console.warn('...removeplayer...');
+        };
+        
+        Client.prototype.removePuppetToClient = function removePuppetToClient(puppetId) {
+          this.puppets[puppetId] = null;
+          delete this.puppets[puppetId];
+        };
+        
+        Client.prototype.onResize = function onResize() {
+          if (this.isView) {
+            this.socket.emit('resizeGameFromClient', {
+              'width': this.width,
+              'height': this.height
+            });
+          }
+        };
+        
+        Client.prototype.setSize = function setSize(data) {
+          this.ratio = Math.min(window.innerWidth / data.width, window.innerHeight / data.height);
+          
+          this.canvas.width = this.width = data.width * this.ratio;
+          this.canvas.height = this.height = data.height * this.ratio;
+          this.canvas.style.marginTop = -this.height / 2 + 'px';
+          this.canvas.style.marginLeft = -this.width / 2 + 'px';
+        };
+        
+        return Client;
+      }());
+    </script>
+  </head>
+  <body>
+    <div id="game"></div>
+    <div id="container"></div>
+    <div class="calibrate">Calibrate</div>
+    
+    <script src="/socket.io/socket.io.js"></script>
+    
+    <script>
+      var client = new Client({
+        'el': document.getElementById('container')
+      });
+    </script>
+  </body>
+</html>
