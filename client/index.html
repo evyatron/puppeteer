@@ -41,19 +41,38 @@
         color: #fff;
         background: #600;
       }
-      .calibrate {
-        position: absolute;
-        bottom: 0;
-        right: 0;
+      
+      .button {
         padding: 10px;
+        border-radius: 5px;
+        border: 1px solid #999;
         background: linear-gradient(to bottom, #ddd, #aaa);
         box-shadow: 0 0 0 1px rgba(255, 255, 255, .3) inset;
-        border-top: 1px solid #999;
-        border-left: 1px solid #999;
-        border-radius: 5px 0 0 0;
       }
-      .calibrate:active {
+      .button.active,
+      .button:active {
         background: linear-gradient(to bottom, #bbb, #888);
+      }
+      
+      .open-mouth {
+        position: absolute;
+        bottom: 10px;
+        left: 50%;
+        padding-left: 20px;
+        padding-right: 20px;
+        transform: translateX(-50%);
+      }
+      .calibrate {
+        position: absolute;
+        top: 3px;
+        right: 3px;
+        font-size: .7em;
+        padding: 5px;
+      }
+      
+      body:not(.view) .view-only,
+      body:not(.controller) .controller-only {
+        display: none;
       }
     </style>
     <script>
@@ -81,7 +100,8 @@
           this.timeToReportSensor = this.sensorFreq;
           this.sensorData = {
             'alpha': 0,
-            'beta': 0
+            'beta': 0,
+            'gamma': 0
           };
           
           this.isWaitingOnPlayers = false;
@@ -176,6 +196,8 @@
           this.isController = false;
           this.isView = true;
           
+          document.body.classList.add('view');
+          
           this.socket.on('removePlayerToClient', this.removePlayerToClient.bind(this));
           this.socket.on('removePuppetToClient', this.removePuppetToClient.bind(this));
           
@@ -206,9 +228,22 @@
           this.isController = true;
           this.isView = false;
           
+          document.body.classList.add('controller');
+          
+          this.mouthOpener = new TimedButton({
+            'el': document.body.querySelector('.button.open-mouth'),
+            'onDown': function onMouthOpenerDown() {
+              this.socket.emit('openMouthFromClient');
+            }.bind(this),
+            'onUp': function onMouthOpenerUp() {
+              this.socket.emit('closeMouthFromClient');
+            }.bind(this)
+          });
+          
           window.addEventListener('deviceorientation', function (e){
             this.sensorData.alpha = e.alpha;
             this.sensorData.beta = e.beta;
+            this.sensorData.gamma = e.gamma;
           }.bind(this));
           
           this.calibrate();
@@ -255,10 +290,8 @@
             var puppet = this.puppets[id];
 
             puppet.targetAngle = puppet.movementData.alpha || 0;
-            puppet.targetMouthOpen = Math.max(Math.min((-puppet.movementData.beta || 0) / this.maxMouthAngle, 1), 0);
 
             puppet.angle += (puppet.targetAngle - puppet.angle) * this.angleLerpAlpha;
-            puppet.mouthOpen += (puppet.targetMouthOpen - puppet.mouthOpen) * this.mouthLerpAlpha;
             
             var ratio = this.ratio;
             var x = puppet.x * this.width;
@@ -286,7 +319,7 @@
             if (puppet.isFlipped) {
               context.scale(-1, 1);
             }
-            
+
             // body
             context.fillStyle = puppet.colour;
             context.fillRect(-hw, -hh, w, h * 0.8);
@@ -298,18 +331,49 @@
             context.beginPath();
             context.arc(-hw + w * 0.85, -hh + h * 0.2, 14 * ratio, 0, Math.PI * 180);
             context.fill();
-            //context.fillRect(-hw + w * 0.85, -hh + h * 0.2, w / 10, h / 10);
             context.fillStyle = 'rgba(0, 0, 0, 1)';
             context.beginPath();
             context.arc(-hw + w * 0.87, -hh + h * 0.21, 5 * ratio, 0, Math.PI * 180);
             context.fill();
-            //context.fillRect(-hw + w * 0.89, -hh + h * 0.24, w / 30, h / 30);
+            
+            // debug
+            //context.fillText(puppet.mouthOpen, 0, 0);
             
             context.restore();
           }
           
           this.lastUpdate = now;
           window.requestAnimationFrame(this.tick.bind(this));
+        };
+        
+        Client.prototype.gamePuppetsToClient = function gamePuppetsToClient(puppets) {
+          var puppetId;
+          
+          for (puppetId in puppets) {
+            var puppetData = puppets[puppetId];
+            var puppet = this.puppets[puppetId];
+            
+            if (puppet) {
+              puppet.mouthOpen += (puppetData.mouthOpen - puppet.mouthOpen) * 0.5;
+              puppet.isFlipped = puppetData.isFlipped;
+              puppet.x += (puppetData.x - puppet.x) * 0.5;
+              puppet.y += (puppetData.y - puppet.y) * 0.5;
+              puppet.movementData = puppetData.movementData;
+            } else {
+              this.addNewPuppet(puppetData);
+            }
+          }
+          
+          for (puppetId in this.puppets) {
+            if (!puppets[puppetId]) {
+              delete this.puppets[puppetId];
+            }
+          }
+          
+          if (this.isWaitingOnPlayers && Object.keys(puppets).length > 0) {
+            this.isWaitingOnPlayers = false;
+            document.getElementById('game').innerHTML = '';
+          }
         };
         
         Client.prototype.gameInfoToClient = function gameInfoToClient(data) {
@@ -356,33 +420,7 @@
           puppet.targetAngle = puppet.angle = -puppet.movementData.alpha || 0;
           puppet.targetMouthOpen = puppet.mouthOpen = Math.max(Math.min((-puppet.movementData.beta || 0) / this.maxMouthAngle, 1), 0);
         };
-        
-        Client.prototype.gamePuppetsToClient = function gamePuppetsToClient(puppets) {
-          var puppetId;
-          
-          for (puppetId in puppets) {
-            if (this.puppets[puppetId]) {
-              this.puppets[puppetId].isFlipped = puppets[puppetId].isFlipped;
-              this.puppets[puppetId].x = puppets[puppetId].x;
-              this.puppets[puppetId].y = puppets[puppetId].y;
-              this.puppets[puppetId].movementData = puppets[puppetId].movementData;
-            } else {
-              this.addNewPuppet(puppets[puppetId]);
-            }
-          }
-          
-          for (puppetId in this.puppets) {
-            if (!puppets[puppetId]) {
-              delete this.puppets[puppetId];
-            }
-          }
-          
-          if (this.isWaitingOnPlayers && Object.keys(puppets).length > 0) {
-            this.isWaitingOnPlayers = false;
-            document.getElementById('game').innerHTML = '';
-          }
-        };
-        
+
         Client.prototype.removePlayerToClient = function removePlayerToClient(data) {
           console.warn('...removeplayer...');
         };
@@ -478,12 +516,66 @@
         
         return Client;
       }());
+      
+      var TimedButton = (function TimedButton() {
+        function TimedButton(options) {
+          this.el;
+          this.isDown = false;
+          this.timeStarted = 0;
+          
+          this.onClick;
+          this.onDown;
+          this.onUp;
+          
+          this.init(options);
+        }
+        
+        TimedButton.prototype.init = function init(options) {
+          this.el = options.el;
+          this.onClick = options.onClick || function(){};
+          this.onDown = options.onDown || function(){};
+          this.onUp = options.onUp || function(){};
+          
+          this.el.addEventListener('touchstart', this.onTouchStart.bind(this));
+          document.body.addEventListener('touchend', this.onTouchEnd.bind(this));
+        };
+        
+        TimedButton.prototype.onTouchStart = function onTouchStart(e) {
+          e.preventDefault();
+          
+          if (this.isDown) {
+            return;
+          }
+          
+          this.el.classList.add('active');
+          this.isDown = true;
+          this.timeStarted = Date.now();
+          
+          this.onDown();
+        };
+        
+        TimedButton.prototype.onTouchEnd = function onTouchEnd(e) {
+          if (!this.isDown) {
+            return;
+          }
+          
+          this.el.classList.remove('active');
+          this.isDown = false;
+          this.timeStarted = 0;
+          
+          this.onUp();
+        };
+        
+        
+        return TimedButton;
+      }());
     </script>
   </head>
   <body>
     <div id="game"></div>
     <div id="container"></div>
-    <div class="calibrate">Calibrate (press when phone is upright)</div>
+    <div class="open-mouth button controller-only">Open Mouth</div>
+    <div class="calibrate button controller-only">Calibrate (press when upright)</div>
     
     <script src="/socket.io/socket.io.js"></script>
     

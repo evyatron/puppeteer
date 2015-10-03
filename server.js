@@ -16,6 +16,8 @@ var io = socketio.listen(server);
 
 var NUMBER_OF_PUPPETS_PER_GAME = Infinity;
 var DEBUG_LEVEL = 1;
+var GAME_ID_LENGTH = 6;
+var MOUTH_OPEN_SPEED = 8;
 
 router.use(express.static(path.resolve(__dirname, 'client')));
 
@@ -27,6 +29,16 @@ function gameLoop(dt) {
   for (var id in games) {
     var game = games[id];
     var puppets = games[id].puppets;
+    
+    for (var puppetId in puppets) {
+      var puppet = puppets[puppetId];
+      
+      if (puppet.isOpeningMouth) {
+        puppet.mouthOpen = Math.min(puppet.mouthOpen + MOUTH_OPEN_SPEED * dt, 1);
+      } else {
+        puppet.mouthOpen = Math.max(puppet.mouthOpen - MOUTH_OPEN_SPEED * dt, 0);
+      }
+    }
     
     sendToGamePlayers(game, 'gamePuppetsToClient', puppets);
   }
@@ -50,80 +62,71 @@ function resizeGameFromClient(data) {
 }
 
 function movementFromClient(movementData) {
-  var playerId = this.id;
-  var player = players[playerId];
-  var game = games[playerGames[playerId] || ''];
-  
-  if (!player || !game) {
-    console.warn('movementFromClient | missing player info', playerId, game, game && game.puppets[playerId]);
-    return false;
-  }
-  
-  var puppetId = game.playerPuppets[playerId];
-  var puppet = game.puppets[puppetId];
-  if (!puppet) {
-    console.warn('Moving invalid puppet', puppetId);
-    return false;
-  }
-  
   if (movementData.alpha > 180) {
     movementData.alpha = Math.min((360 - movementData.alpha), 90);
   } else {
     movementData.alpha = -movementData.alpha;
   }
   
-  /*
-  if (puppet.prevMovementData) {
-    for (var k in movementData) {
-      movementData[k] = puppet.prevMovementData[k] + 0.5 * (movementData[k] - puppet.prevMovementData[k]);
-    }
-  } else {
-    puppet.prevMovementData = movementData;
-  }
-  */
-
-  puppet.movementData = movementData;
+  getPlayerPuppet(this.id, function onGotPuppet(puppet) {
+    puppet.movementData = movementData;
+  }, function onError() {
+    
+  });
 }
 
 function positionFromClient(positionData) {
-  var playerId = this.id;
-  var player = players[playerId];
-  var game = games[playerGames[playerId] || ''];
-  
-  if (!player || !game) {
-    console.warn('positionFromClient | missing player info', playerId, game, game && game.puppets[playerId]);
-    return false;
-  }
-  
-  var puppetId = game.playerPuppets[playerId];
-  var puppet = game.puppets[puppetId];
-  if (!puppet) {
-    console.warn('Moving invalid puppet', puppetId);
-    return false;
-  }
-
-  game.puppets[puppetId].x = positionData.x;
-  game.puppets[puppetId].y = positionData.y;
+  getPlayerPuppet(this.id, function onGotPuppet(puppet) {
+    puppet.x = positionData.x;
+    puppet.y = positionData.y;
+  }, function onError() {
+    
+  });
 }
 
 function flipPuppetFromClient() {
-  var playerId = this.id;
+  getPlayerPuppet(this.id, function onGotPuppet(puppet) {
+    puppet.isFlipped = !puppet.isFlipped;
+  }, function onError() {
+    
+  });
+}
+
+function openMouthFromClient() {
+  getPlayerPuppet(this.id, function onGotPuppet(puppet) {
+    puppet.isOpeningMouth = true;
+  }, function onError() {
+    
+  });
+}
+
+function closeMouthFromClient() {
+  getPlayerPuppet(this.id, function onGotPuppet(puppet) {
+    puppet.isOpeningMouth = false;
+  }, function onError() {
+    
+  });
+}
+
+function getPlayerPuppet(playerId, onSuccess, onError) {
   var player = players[playerId];
   var game = games[playerGames[playerId] || ''];
   
   if (!player || !game) {
-    console.warn('flipPuppetFromClient | missing player info', playerId, game, game && game.puppets[playerId]);
+    onError();
     return false;
   }
   
   var puppetId = game.playerPuppets[playerId];
   var puppet = game.puppets[puppetId];
   if (!puppet) {
-    console.warn('Moving invalid puppet', puppetId);
+    onError();
     return false;
   }
-
-  game.puppets[puppetId].isFlipped = !game.puppets[puppetId].isFlipped;
+  
+  onSuccess(puppet);
+  
+  return true;
 }
 
 function addPuppetFromClient(data) {
@@ -151,6 +154,7 @@ function addPuppetFromClient(data) {
     'width': width,
     'height': height,
     'isFlipped': false,
+    'mouthOpen': 0,
     'type': data.type,
     'name': data.name || player.name || 'Puppet',
     'colour': 'rgb(' + randInt(50, 200) + ',' + randInt(50, 200) + ',' + randInt(50, 200) + ')',
@@ -185,11 +189,10 @@ function sendToGamePlayers(game, message, data) {
 }
 
 function generateGameId() {
-  var idLength = 1;
   var id = '';
   var symbols = ['a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p','q','r','s','t','u','v','w','x','y','z'];
   
-  for (var i = 0; i < idLength; i++ ) {
+  for (var i = 0; i < GAME_ID_LENGTH; i++ ) {
     id += symbols[Math.floor(Math.random() * symbols.length)];
   }
   
@@ -266,13 +269,17 @@ function onPlayerConnect(socket) {
 
   socket.on('disconnect', onPlayerDisconnect.bind(socket));
   socket.on('listGamesFromClient', listGamesFromClient.bind(socket));
-  socket.on('createGameFromClient', createGameFromClient.bind(socket));
   socket.on('connectToGameFromClient', connectToGameFromClient.bind(socket));
+  
+  socket.on('createGameFromClient', createGameFromClient.bind(socket));
+  socket.on('resizeGameFromClient', resizeGameFromClient.bind(socket));
+  
   socket.on('addPuppetFromClient', addPuppetFromClient.bind(socket));
   socket.on('movementFromClient', movementFromClient.bind(socket));
   socket.on('positionFromClient', positionFromClient.bind(socket));
   socket.on('flipPuppetFromClient', flipPuppetFromClient.bind(socket));
-  socket.on('resizeGameFromClient', resizeGameFromClient.bind(socket));
+  socket.on('openMouthFromClient', openMouthFromClient.bind(socket));
+  socket.on('closeMouthFromClient', closeMouthFromClient.bind(socket));
 }
 
 function onPlayerDisconnect() {
@@ -298,15 +305,9 @@ function onPlayerDisconnect() {
       game.numberOfPuppets--;
     }
     
-    /*
-    if (game.ownerId === playerId) {
-      if (game.playerIds.length === 0) {
-        delete games[gameId];
-      } else {
-        game.ownerId = game.playerIds[0];
-      }
+    if (game.playerIds.length === 0) {
+      delete games[gameId];
     }
-    */
   }
   
   delete playerGames[playerId];
