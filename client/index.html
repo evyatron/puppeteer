@@ -5,48 +5,61 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     
     <style>
-      body, div, canvas {
+      body, div, h2, ul, li, canvas {
         margin: 0;
         padding: 0;
       }
       
       body {
         -webkit-user-select: none;
+        overflow: hidden;
       }
       
       canvas {
         position: absolute;
         top: 50%;
         left: 50%;
+        width: 0;
+        height: 0;
         background: linear-gradient(to bottom, #a0f0ff, #70d0df);
       }
       #game {
         position: relative;
-        max-width: 50%;
+        padding: 5px;
         font-size: .9em;
         z-index: 10;
       }
+      h2 {
+        font-size: 1.1em;
+        margin-bottom: 10px;
+      }
+      a {
+        color: inherit;
+      }
+      .error {
+        padding: 8px;
+        color: #fff;
+        background: #600;
+      }
       .calibrate {
         position: absolute;
-        top: 0;
+        bottom: 0;
         right: 0;
         padding: 10px;
-        background: #ccc;
+        background: linear-gradient(to bottom, #ddd, #aaa);
+        box-shadow: 0 0 0 1px rgba(255, 255, 255, .3) inset;
+        border-top: 1px solid #999;
+        border-left: 1px solid #999;
+        border-radius: 5px 0 0 0;
+      }
+      .calibrate:active {
+        background: linear-gradient(to bottom, #bbb, #888);
       }
     </style>
     <script>
       /*
-        global gyro
         global io
       */
-      (function(a,b){"function"===typeof define&&define.amd?define(b):"object"===typeof exports?module.exports=b():a.gyro=b()})(this,function(){var a={x:null,y:null,z:null,alpha:null,beta:null,gamma:null},b={x:0,y:0,z:0,alpha:0,beta:0,gamma:0},g=null,e=[],h={frequency:500,calibrate:function(){for(var f in a)b[f]="number"===typeof a[f]?a[f]:0},getOrientation:function(){return a},startTracking:function(b){g=setInterval(function(){b(a)},h.frequency)},stopTracking:function(){clearInterval(g)},hasFeature:function(a){for(var b in e)if(a==
-      e[b])return!0;return!1},getFeatures:function(){return e}};window&&window.addEventListener&&function(){function f(d){e.push("MozOrientation");d.target.removeEventListener("MozOrientation",f,!0);d.target.addEventListener("MozOrientation",function(c){a.x=c.x-b.x;a.y=c.y-b.y;a.z=c.z-b.z},!0)}function g(d){e.push("devicemotion");d.target.removeEventListener("devicemotion",g,!0);d.target.addEventListener("devicemotion",function(c){a.x=c.accelerationIncludingGravity.x-b.x;a.y=c.accelerationIncludingGravity.y-
-      b.y;a.z=c.accelerationIncludingGravity.z-b.z},!0)}function h(d){e.push("deviceorientation");d.target.removeEventListener("deviceorientation",h,!0);d.target.addEventListener("deviceorientation",function(c){a.alpha=c.alpha-b.alpha;a.beta=c.beta-b.beta;a.gamma=c.gamma-b.gamma},!0)}window.addEventListener("MozOrientation",f,!0);window.addEventListener("devicemotion",g,!0);window.addEventListener("deviceorientation",h,!0)}();return h});
-      
-      window.onerror = function onError(message, what, where) {
-        document.getElementById('game').innerHTML = message + '<br />' + where;
-      };
-    
       var Client = (function Client() {
         function Client(options) {
           this.el;
@@ -71,6 +84,8 @@
             'beta': 0
           };
           
+          this.isWaitingOnPlayers = false;
+
           this.puppets = {};
           
           this.angleLerpAlpha = 0.5;
@@ -103,6 +118,8 @@
           document.querySelector('.calibrate').addEventListener('click', this.calibrate.bind(this));
           
           this.socket.on('connect', this.connect.bind(this));
+          this.socket.on('listGamesToClient', this.listGamesToClient.bind(this));
+          this.socket.on('errorToClient', this.errorToClient.bind(this));
         };
         
         Client.prototype.connect = function connect(data) {
@@ -124,6 +141,35 @@
           }
         };
         
+        Client.prototype.errorToClient = function errorToClient(data) {
+          var html = '<div class="error">' +
+                        data.message + '<br />' +
+                        '<a href="/">Go back to create a new one</a>' +
+                      '</div>';
+          
+          document.getElementById('game').innerHTML = html;
+        };
+        
+        Client.prototype.listGamesToClient = function listGamesToClient(data) {
+          var games = data.games;
+          var html = '<h2>Please select from one of the active games:</h2>';
+          
+          for (var id in games) {
+            var game = games[id];
+            var url = 'http://' + window.location.host + '/?' + id;
+            var numPuppets = Object.keys(game.puppets).length;
+            var numPlayers = game.playerIds.length;
+            
+            html += '<div>' +
+                      '<a href="' + url + '">' + url + '</a> - ' + 
+                      (numPlayers - numPuppets) + ' viewers, ' +
+                      numPuppets + ' puppets' +
+                    '</div>';
+          }
+          
+          document.getElementById('game').innerHTML = html;
+        };
+        
         Client.prototype.startAsView = function startAsView(gameId) {
           console.warn('Start as view');
           
@@ -136,13 +182,10 @@
           window.addEventListener('resize', this.onResize.bind(this));
           
           if (!gameId) {
-            var size = {
+            this.socket.emit('createGameFromClient', {
               'width': window.innerWidth,
               'height': window.innerHeight
-            };
-            
-            this.socket.emit('createGameFromClient', size);
-            this.setSize(size);
+            });
           }
         };
         
@@ -150,7 +193,7 @@
           console.warn('Start as controller', gameId);
           
           if (!gameId) {
-            document.getElementById('game').innerHTML = 'Please type in a valid game id';
+            this.socket.emit('listGamesFromClient');
             return;
           }
           
@@ -164,8 +207,8 @@
           this.isView = false;
           
           window.addEventListener('deviceorientation', function (e){
-            this.sensorData.alpha = this.sensorData.alpha + (e.alpha - this.sensorData.alpha) * this.sensorAlpha;
-            this.sensorData.beta = this.sensorData.beta + (e.beta - this.sensorData.beta) * this.sensorAlpha;
+            this.sensorData.alpha = e.alpha;
+            this.sensorData.beta = e.beta;
           }.bind(this));
           
           this.calibrate();
@@ -178,7 +221,7 @@
         
         Client.prototype.calibrate = function calibrate() {
           if (Math.abs(this.sensorData.beta) > 25) {
-            this.baseLine.beta = 75;
+            this.baseLine.beta = 70;
           }
         };
         
@@ -243,7 +286,7 @@
             if (puppet.isFlipped) {
               context.scale(-1, 1);
             }
-
+            
             // body
             context.fillStyle = puppet.colour;
             context.fillRect(-hw, -hh, w, h * 0.8);
@@ -252,9 +295,15 @@
             context.fillRect(-hw, -hh + h * 0.8 + mouthDist - 2, w, h * 0.2);
             // eye
             context.fillStyle = 'rgba(255, 255, 255, 1)';
-            context.fillRect(-hw + w * 0.85, -hh + h * 0.2, w / 10, h / 10);
+            context.beginPath();
+            context.arc(-hw + w * 0.85, -hh + h * 0.2, 14 * ratio, 0, Math.PI * 180);
+            context.fill();
+            //context.fillRect(-hw + w * 0.85, -hh + h * 0.2, w / 10, h / 10);
             context.fillStyle = 'rgba(0, 0, 0, 1)';
-            context.fillRect(-hw + w * 0.89, -hh + h * 0.24, w / 30, h / 30);
+            context.beginPath();
+            context.arc(-hw + w * 0.87, -hh + h * 0.21, 5 * ratio, 0, Math.PI * 180);
+            context.fill();
+            //context.fillRect(-hw + w * 0.89, -hh + h * 0.24, w / 30, h / 30);
             
             context.restore();
           }
@@ -265,12 +314,10 @@
         
         Client.prototype.gameInfoToClient = function gameInfoToClient(data) {
           var game = data.game;
-          var gameUrl = 'http://pupeteer.evyatron.c9.io/?' + game.id;
           
           var urlGameId = window.location.search.replace('?', '');
           if (urlGameId !== game.id) {
             window.history.pushState('', '', '?' + game.id);
-            return;
           }
           
           console.warn('Got game info', game);
@@ -279,14 +326,25 @@
             'width': game.width,
             'height': game.height
           });
-          
-          document.getElementById('game').innerHTML = '<a href="' + gameUrl + '" target="_blank">' + gameUrl + '</a>';
-          
+
           if (this.isController) {
+            document.getElementById('game').innerHTML = 'Connected to game';
+            
+            this.calibrate();
+            
             this.socket.emit('addPuppetFromClient', {
               'type': 'default',
               'name': 'My Puppet'
             });
+          } else if (this.isView) {
+            if (game.numberOfPuppets === 0) {
+              this.isWaitingOnPlayers = true;
+              document.getElementById('game').innerHTML = 'Waiting for players to join...' +
+                                                          '<br />' +
+                                                          'Please open this link on your mobile device' +
+                                                          '<br />' +
+                                                          '<img src="' + game.qr + '" />';
+            }
           }
         };
         
@@ -318,6 +376,11 @@
               delete this.puppets[puppetId];
             }
           }
+          
+          if (this.isWaitingOnPlayers && Object.keys(puppets).length > 0) {
+            this.isWaitingOnPlayers = false;
+            document.getElementById('game').innerHTML = '';
+          }
         };
         
         Client.prototype.removePlayerToClient = function removePlayerToClient(data) {
@@ -348,6 +411,8 @@
           this.canvas.height = this.height = data.height * this.ratio;
           this.canvas.style.marginTop = -this.height / 2 + 'px';
           this.canvas.style.marginLeft = -this.width / 2 + 'px';
+          this.canvas.style.width = this.width + 'px';
+          this.canvas.style.height = this.height + 'px';
         };
         
         Client.prototype.getPossessedPuppet = function getPossessedPuppet() {
@@ -418,7 +483,7 @@
   <body>
     <div id="game"></div>
     <div id="container"></div>
-    <div class="calibrate">Calibrate</div>
+    <div class="calibrate">Calibrate (press when phone is upright)</div>
     
     <script src="/socket.io/socket.io.js"></script>
     

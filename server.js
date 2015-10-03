@@ -8,13 +8,13 @@ var socketio = require('socket.io');
 var express = require('express');
 var gameloop = require('node-gameloop');
 var uuid = require('node-uuid');
-
+var QRCode = require('qrcode');
 
 var router = express();
 var server = http.createServer(router);
 var io = socketio.listen(server);
 
-var NUMBER_OF_PUPPETS_PER_GAME = 5;
+var NUMBER_OF_PUPPETS_PER_GAME = Infinity;
 var DEBUG_LEVEL = 1;
 
 router.use(express.static(path.resolve(__dirname, 'client')));
@@ -66,13 +66,13 @@ function movementFromClient(movementData) {
     return false;
   }
   
-  /*
   if (movementData.alpha > 180) {
     movementData.alpha = Math.min((360 - movementData.alpha), 90);
   } else {
     movementData.alpha = -movementData.alpha;
   }
   
+  /*
   if (puppet.prevMovementData) {
     for (var k in movementData) {
       movementData[k] = puppet.prevMovementData[k] + 0.5 * (movementData[k] - puppet.prevMovementData[k]);
@@ -205,6 +205,11 @@ function connectPlayerToGame(playerId, gameId) {
   var game = games[gameId];
   
   if (!game) {
+    player.emit('errorToClient', {
+      'code': 1,
+      'message': 'Trying to join invalid game'
+    });
+    
     console.warn('trying to connect to missing game');
     return;
   }
@@ -224,18 +229,32 @@ function createGameFromClient(data) {
   var gameId = generateGameId();
   var game = {
     'id': gameId,
+    'url': 'http://pupeteer.evyatron.c9.io/?' + gameId,
     'ownerId': playerId,
     'width': data.width,
     'height': data.height,
     'playerIds': [],
     'puppets': {},
-    'playerPuppets': {}
+    'playerPuppets': {},
+    'numberOfPuppets': 0,
+    'qr': ''
   };
   games[gameId] = game;
   
   console.info('Create new game', gameId);
   
-  connectPlayerToGame(playerId, gameId);
+  QRCode.toDataURL(game.url, function onQRReady(err, url) {
+    if (!err) {
+      game.qr = url;
+    }
+    connectPlayerToGame(playerId, gameId, true);
+  });
+}
+
+function listGamesFromClient() {
+  this.emit('listGamesToClient', {
+    'games': games
+  });
 }
 
 function onPlayerConnect(socket) {
@@ -246,6 +265,7 @@ function onPlayerConnect(socket) {
   players[playerId] = socket;
 
   socket.on('disconnect', onPlayerDisconnect.bind(socket));
+  socket.on('listGamesFromClient', listGamesFromClient.bind(socket));
   socket.on('createGameFromClient', createGameFromClient.bind(socket));
   socket.on('connectToGameFromClient', connectToGameFromClient.bind(socket));
   socket.on('addPuppetFromClient', addPuppetFromClient.bind(socket));
