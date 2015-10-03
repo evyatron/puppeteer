@@ -20,7 +20,12 @@
         left: 50%;
         background: linear-gradient(to bottom, #a0f0ff, #70d0df);
       }
-      
+      #game {
+        position: relative;
+        max-width: 50%;
+        font-size: .9em;
+        z-index: 10;
+      }
       .calibrate {
         position: absolute;
         top: 0;
@@ -37,6 +42,10 @@
       (function(a,b){"function"===typeof define&&define.amd?define(b):"object"===typeof exports?module.exports=b():a.gyro=b()})(this,function(){var a={x:null,y:null,z:null,alpha:null,beta:null,gamma:null},b={x:0,y:0,z:0,alpha:0,beta:0,gamma:0},g=null,e=[],h={frequency:500,calibrate:function(){for(var f in a)b[f]="number"===typeof a[f]?a[f]:0},getOrientation:function(){return a},startTracking:function(b){g=setInterval(function(){b(a)},h.frequency)},stopTracking:function(){clearInterval(g)},hasFeature:function(a){for(var b in e)if(a==
       e[b])return!0;return!1},getFeatures:function(){return e}};window&&window.addEventListener&&function(){function f(d){e.push("MozOrientation");d.target.removeEventListener("MozOrientation",f,!0);d.target.addEventListener("MozOrientation",function(c){a.x=c.x-b.x;a.y=c.y-b.y;a.z=c.z-b.z},!0)}function g(d){e.push("devicemotion");d.target.removeEventListener("devicemotion",g,!0);d.target.addEventListener("devicemotion",function(c){a.x=c.accelerationIncludingGravity.x-b.x;a.y=c.accelerationIncludingGravity.y-
       b.y;a.z=c.accelerationIncludingGravity.z-b.z},!0)}function h(d){e.push("deviceorientation");d.target.removeEventListener("deviceorientation",h,!0);d.target.addEventListener("deviceorientation",function(c){a.alpha=c.alpha-b.alpha;a.beta=c.beta-b.beta;a.gamma=c.gamma-b.gamma},!0)}window.addEventListener("MozOrientation",f,!0);window.addEventListener("devicemotion",g,!0);window.addEventListener("deviceorientation",h,!0)}();return h});
+      
+      window.onerror = function onError(message, what, where) {
+        document.getElementById('game').innerHTML = message + '<br />' + where;
+      };
     
       var Client = (function Client() {
         function Client(options) {
@@ -55,10 +64,23 @@
           this.possessedPuppetId;
           this.localPuppet;
           this.baseLine = {};
+          this.sensorFreq = 0.06;
+          this.timeToReportSensor = this.sensorFreq;
+          this.sensorData = {
+            'alpha': 0,
+            'beta': 0
+          };
           
           this.puppets = {};
           
           this.angleLerpAlpha = 0.5;
+          this.mouthLerpAlpha = 0.5;
+          this.mouthOpenPercent = 0.4;
+          this.maxMouthAngle = 10;
+          this.backMouthWidth = 0.5;
+          
+          this.timeForTap = 150;
+          this.sensorAlpha = 0.7;
           
           this.myPuppet = {};
           
@@ -137,13 +159,16 @@
           this.canvas.addEventListener('touchstart', this.onTouchStart.bind(this));
           this.canvas.addEventListener('touchmove', this.onTouchMove.bind(this));
           this.canvas.addEventListener('touchend', this.onTouchEnd.bind(this));
-
+          
           this.isController = true;
           this.isView = false;
-
+          
+          window.addEventListener('deviceorientation', function (e){
+            this.sensorData.alpha = this.sensorData.alpha + (e.alpha - this.sensorData.alpha) * this.sensorAlpha;
+            this.sensorData.beta = this.sensorData.beta + (e.beta - this.sensorData.beta) * this.sensorAlpha;
+          }.bind(this));
+          
           this.calibrate();
-          gyro.frequency = 1000 / 30;
-          gyro.startTracking(this.gotMotionInfo.bind(this));
         };
         
         Client.prototype.possessPuppetToClient = function possessPuppetToClient(data) {
@@ -152,43 +177,45 @@
         };
         
         Client.prototype.calibrate = function calibrate() {
-          var info = gyro.getOrientation();
-          for (var k in info) {
-            this.baseLine[k] = info[k] || 0;
+          if (Math.abs(this.sensorData.beta) > 25) {
+            this.baseLine.beta = 75;
           }
         };
-
-        Client.prototype.gotMotionInfo = function gotMotionInfo(info) {
-          if (this.possessedPuppetId) {
-            var movementData = {};
-            for (var k in info) {
-              movementData[k] = info[k] - this.baseLine[k];
-            }
-
-            this.socket.emit('movementFromClient', movementData);
+        
+        Client.prototype.sendMovement = function sendMovement() {
+          for (var k in this.baseLine) {
+            this.sensorData[k] -= this.baseLine[k];
           }
+  
+          this.socket.emit('movementFromClient', this.sensorData);
         };
         
         Client.prototype.tick = function tick() {
           var now = Date.now();
           this.dt = (now - this.lastUpdate) / 1000;
           
+          if (this.isController) {
+            this.timeToReportSensor -= this.dt;
+            if (this.timeToReportSensor <= 0) {
+              this.timeToReportSensor = this.sensorFreq;
+              this.sendMovement();
+            }
+          }
+          
           var context = this.context;
+          var maxMouthOpen = this.mouthOpenPercent;
+          var backMouthWidth = this.backMouthWidth;
           
           context.clearRect(0, 0, this.width, this.height);
 
           for (var id in this.puppets) {
             var puppet = this.puppets[id];
 
-            puppet.targetAngle = -puppet.movementData.alpha || 0;
-            
-            if (puppet.targetAngle < -180) {
-              puppet.targetAngle = 360 - puppet.targetAngle;
-            } else if (puppet.targetAngle > 180) {
-              puppet.targetAngle = puppet.targetAngle - 360;
-            }
-            
+            puppet.targetAngle = puppet.movementData.alpha || 0;
+            puppet.targetMouthOpen = Math.max(Math.min((-puppet.movementData.beta || 0) / this.maxMouthAngle, 1), 0);
+
             puppet.angle += (puppet.targetAngle - puppet.angle) * this.angleLerpAlpha;
+            puppet.mouthOpen += (puppet.targetMouthOpen - puppet.mouthOpen) * this.mouthLerpAlpha;
             
             var ratio = this.ratio;
             var x = puppet.x * this.width;
@@ -197,6 +224,7 @@
             var h = puppet.height * ratio;
             var hw = w / 2;
             var hh = h / 2;
+            var mouthDist = puppet.mouthOpen * h * maxMouthOpen;
             
             if (id === this.possessedPuppetId) {
               this.myPuppet = {
@@ -206,24 +234,27 @@
                 'right': x + hw
               };
             }
-
+            
             context.save();
             
             context.translate(x, y);
-            context.rotate(puppet.angle * Math.PI/180);
+            context.rotate(puppet.angle * Math.PI / 180);
             
-            
+            if (puppet.isFlipped) {
+              context.scale(-1, 1);
+            }
+
             // body
             context.fillStyle = puppet.colour;
             context.fillRect(-hw, -hh, w, h * 0.8);
             // mouth
-            context.fillRect(-hw, -hh + h * 0.8 - 1, w, h * 0.2);
+            context.fillRect(-hw, -hh + h * 0.8 - 1, w * backMouthWidth, mouthDist);
+            context.fillRect(-hw, -hh + h * 0.8 + mouthDist - 2, w, h * 0.2);
             // eye
-            var o = puppet.isFlipped;
             context.fillStyle = 'rgba(255, 255, 255, 1)';
-            context.fillRect(-hw + w * (o? 0.15 : 0.85), -hh + h * 0.2, w / 10, h / 10);
+            context.fillRect(-hw + w * 0.85, -hh + h * 0.2, w / 10, h / 10);
             context.fillStyle = 'rgba(0, 0, 0, 1)';
-            context.fillRect(-hw + w * (o? 0.17 : 0.89), -hh + h * 0.24, w / 30, h / 30);
+            context.fillRect(-hw + w * 0.89, -hh + h * 0.24, w / 30, h / 30);
             
             context.restore();
           }
@@ -265,6 +296,7 @@
           this.puppets[puppet.id] = puppet;
           
           puppet.targetAngle = puppet.angle = -puppet.movementData.alpha || 0;
+          puppet.targetMouthOpen = puppet.mouthOpen = Math.max(Math.min((-puppet.movementData.beta || 0) / this.maxMouthAngle, 1), 0);
         };
         
         Client.prototype.gamePuppetsToClient = function gamePuppetsToClient(puppets) {
@@ -299,10 +331,13 @@
         
         Client.prototype.onResize = function onResize() {
           if (this.isView) {
-            this.socket.emit('resizeGameFromClient', {
-              'width': this.width,
-              'height': this.height
-            });
+            var size = {
+              'width': window.innerWidth,
+              'height': window.innerHeight
+            };
+            
+            this.socket.emit('resizeGameFromClient', size);
+            this.setSize(size);
           }
         };
         
@@ -331,9 +366,12 @@
 
           if (x > this.myPuppet.left && x < this.myPuppet.right &&
               y > this.myPuppet.top && y < this.myPuppet.bottom) {
+                
+            var localPuppet = this.getPossessedPuppet();
             this.touchStart = {
-              'x': x,
-              'y': y
+              'when': Date.now(),
+              'x': x - localPuppet.x * this.width,
+              'y': y - localPuppet.y * this.height
             };
           } else {
             this.touchStart = null;
@@ -345,16 +383,13 @@
             return;
           }
           
-          var x = (e.changedTouches[0].pageX - this.canvas.offsetLeft) / this.width;
-          var y = (e.changedTouches[0].pageY - this.canvas.offsetTop) / this.height;
+          var touch = e.changedTouches[0];
+          var x = (touch.pageX - this.canvas.offsetLeft - this.touchStart.x) / this.width;
+          var y = (touch.pageY - this.canvas.offsetTop - this.touchStart.y) / this.height;
           
           x = Math.max(Math.min(x, 1), 0);
           y = Math.max(Math.min(y, 1), 0);
-          
-          var localPuppet = this.getPossessedPuppet();
-          localPuppet.x = x;
-          localPuppet.y = y;
-          
+
           this.socket.emit('positionFromClient', {
             'x': x,
             'y': y
@@ -365,11 +400,8 @@
           if (!this.touchStart) {
             return;
           }
-         
-          var x = (e.changedTouches[0].pageX - this.canvas.offsetLeft);
-          var y = (e.changedTouches[0].pageY - this.canvas.offsetTop);
-          
-          if (x === this.touchStart.x && y === this.touchStart.y) {
+
+          if (Date.now() - this.touchStart.when <= this.timeForTap) {
             var localPuppet = this.getPossessedPuppet();
             localPuppet.isFlipped = !localPuppet.isFlipped;
             

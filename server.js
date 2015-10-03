@@ -41,6 +41,11 @@ function resizeGameFromClient(data) {
   if (game) {
     game.width = width;
     game.height = height;
+  
+    sendToGamePlayers(game, 'resizeGameToClient', {
+      'width': width,
+      'height': height
+    });
   }
 }
 
@@ -61,11 +66,23 @@ function movementFromClient(movementData) {
     return false;
   }
   
-  for (var k in movementData) {
-    movementData[k] = smooth(movementData[k]);
+  /*
+  if (movementData.alpha > 180) {
+    movementData.alpha = Math.min((360 - movementData.alpha), 90);
+  } else {
+    movementData.alpha = -movementData.alpha;
   }
+  
+  if (puppet.prevMovementData) {
+    for (var k in movementData) {
+      movementData[k] = puppet.prevMovementData[k] + 0.5 * (movementData[k] - puppet.prevMovementData[k]);
+    }
+  } else {
+    puppet.prevMovementData = movementData;
+  }
+  */
 
-  game.puppets[puppetId].movementData = movementData;
+  puppet.movementData = movementData;
 }
 
 function positionFromClient(positionData) {
@@ -107,10 +124,6 @@ function flipPuppetFromClient() {
   }
 
   game.puppets[puppetId].isFlipped = !game.puppets[puppetId].isFlipped;
-}
-
-function smooth(value) {
-  return Math.round(value);
 }
 
 function addPuppetFromClient(data) {
@@ -227,6 +240,8 @@ function createGameFromClient(data) {
 
 function onPlayerConnect(socket) {
   var playerId = socket.id;
+  
+  console.info('Player connect:', playerId);
   
   players[playerId] = socket;
 
