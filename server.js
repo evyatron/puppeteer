@@ -68,6 +68,47 @@ function movementFromClient(movementData) {
   game.puppets[puppetId].movementData = movementData;
 }
 
+function positionFromClient(positionData) {
+  var playerId = this.id;
+  var player = players[playerId];
+  var game = games[playerGames[playerId] || ''];
+  
+  if (!player || !game) {
+    console.warn('positionFromClient | missing player info', playerId, game, game && game.puppets[playerId]);
+    return false;
+  }
+  
+  var puppetId = game.playerPuppets[playerId];
+  var puppet = game.puppets[puppetId];
+  if (!puppet) {
+    console.warn('Moving invalid puppet', puppetId);
+    return false;
+  }
+
+  game.puppets[puppetId].x = positionData.x;
+  game.puppets[puppetId].y = positionData.y;
+}
+
+function flipPuppetFromClient() {
+  var playerId = this.id;
+  var player = players[playerId];
+  var game = games[playerGames[playerId] || ''];
+  
+  if (!player || !game) {
+    console.warn('flipPuppetFromClient | missing player info', playerId, game, game && game.puppets[playerId]);
+    return false;
+  }
+  
+  var puppetId = game.playerPuppets[playerId];
+  var puppet = game.puppets[puppetId];
+  if (!puppet) {
+    console.warn('Moving invalid puppet', puppetId);
+    return false;
+  }
+
+  game.puppets[puppetId].isFlipped = !game.puppets[puppetId].isFlipped;
+}
+
 function smooth(value) {
   return Math.round(value);
 }
@@ -96,6 +137,7 @@ function addPuppetFromClient(data) {
     'y': rand(height / game.height, 1 - height / game.height),
     'width': width,
     'height': height,
+    'isFlipped': false,
     'type': data.type,
     'name': data.name || player.name || 'Puppet',
     'colour': 'rgb(' + randInt(50, 200) + ',' + randInt(50, 200) + ',' + randInt(50, 200) + ')',
@@ -193,6 +235,8 @@ function onPlayerConnect(socket) {
   socket.on('connectToGameFromClient', connectToGameFromClient.bind(socket));
   socket.on('addPuppetFromClient', addPuppetFromClient.bind(socket));
   socket.on('movementFromClient', movementFromClient.bind(socket));
+  socket.on('positionFromClient', positionFromClient.bind(socket));
+  socket.on('flipPuppetFromClient', flipPuppetFromClient.bind(socket));
   socket.on('resizeGameFromClient', resizeGameFromClient.bind(socket));
 }
 
