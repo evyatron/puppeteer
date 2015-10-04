@@ -312,6 +312,7 @@ var Controller = (function Controller() {
     this.client;
     
     this.mouthOpener = null;
+    this.particlesTrigger = null;
     
     this.possessedPuppetId = null;
     
@@ -349,9 +350,12 @@ var Controller = (function Controller() {
         'onDown': this.onMouthOpenerPressed.bind(this),
         'onUp': this.onMouthOpenerReleased.bind(this)
       });
-      
-      document.querySelector('.particles').addEventListener('click', this.addParticles.bind(this));
-      
+      this.particlesTrigger = new TimedButton({
+        'el': document.body.querySelector('.particles'),
+        'timeForClick': this.timeForTap,
+        'onClick': this.addParticles.bind(this)
+      });
+
       window.addEventListener('deviceorientation', this.gotDeviceMotion.bind(this));
     }
   };
@@ -513,6 +517,7 @@ var TimedButton = (function TimedButton() {
     this.el;
     this.isDown = false;
     this.timeStarted = 0;
+    this.timeForClick = 0;
     
     this.onClick;
     this.onDown;
@@ -526,6 +531,7 @@ var TimedButton = (function TimedButton() {
     this.onClick = options.onClick || function(){};
     this.onDown = options.onDown || function(){};
     this.onUp = options.onUp || function(){};
+    this.timeForClick = options.timeForClick || 0;
     
     this.el.addEventListener('touchstart', this.onTouchStart.bind(this));
     document.body.addEventListener('touchend', this.onTouchEnd.bind(this));
@@ -552,6 +558,11 @@ var TimedButton = (function TimedButton() {
     
     this.el.classList.remove('active');
     this.isDown = false;
+    
+    if (Date.now() - this.timeStarted < this.timeForClick) {
+      this.onClick();
+    }
+    
     this.timeStarted = 0;
     
     this.onUp();
