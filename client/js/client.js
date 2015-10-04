@@ -102,7 +102,7 @@ var Client = (function Client() {
     }
     
     html += '<div class="create-message create button viewer-only">Or create a new one!</div>';
-    html += '<div class="create-message controller-only">Or create a new onefrom your PC!</div>';
+    html += '<div class="create-message controller-only">Or create a new one from a desktop</div>';
     
     document.getElementById('info').innerHTML = html;
     document.querySelector('#info .create').addEventListener('click', this.createRoom.bind(this));
@@ -123,7 +123,6 @@ var Client = (function Client() {
     
     var context = this.context;
     var maxMouthOpen = this.mouthOpenPercent;
-    var backMouthWidth = this.backMouthWidth;
     
     context.clearRect(0, 0, this.width, this.height);
 
@@ -141,7 +140,7 @@ var Client = (function Client() {
       var h = puppet.height * ratio;
       var hw = w / 2;
       var hh = h / 2;
-      var mouthDist = puppet.mouthOpen * h * maxMouthOpen;
+      var mouthDist = Math.round(puppet.mouthOpen * h * maxMouthOpen);
       
       if (id === Controller.possessedPuppetId) {
         Controller.puppetBounds = {
@@ -162,11 +161,9 @@ var Client = (function Client() {
       }
 
       // body
-      context.fillStyle = puppet.colour;
-      context.fillRect(-hw, -hh, w, h * 0.8);
-      // mouth
-      context.fillRect(-hw, -hh + h * 0.8 - 1, w * backMouthWidth, mouthDist);
-      context.fillRect(-hw, -hh + h * 0.8 + mouthDist - 2, w, h * 0.2);
+      this.drawPuppetBody(context, h, w, hh, hw, mouthDist, 0, -6, 'rgba(0, 0, 0, .1)');
+      this.drawPuppetBody(context, h, w, hh, hw, mouthDist, 1, 0, puppet.colour);
+      
       // eye
       context.fillStyle = 'rgba(255, 255, 255, 1)';
       context.beginPath();
@@ -185,6 +182,13 @@ var Client = (function Client() {
     
     this.lastUpdate = now;
     window.requestAnimationFrame(this.tick.bind(this));
+  };
+  
+  Client.prototype.drawPuppetBody = function drawPuppetBody(context, h, w, hh, hw, mouthDist, mouthOffset, offset, colour) {
+    context.fillStyle = colour;
+    context.fillRect(-hw + offset, -hh + offset, w, h * 0.8);
+    context.fillRect(-hw + offset, -hh + offset + h * 0.8 - mouthOffset, w * this.backMouthWidth, mouthDist);
+    context.fillRect(-hw + offset, -hh + offset + h * 0.8 + mouthDist - mouthOffset * 2, w, h * 0.2);
   };
   
   Client.prototype.roomPuppetsToClient = function roomPuppetsToClient(puppets) {
@@ -224,6 +228,10 @@ var Client = (function Client() {
     
     window.history.pushState('', '', this.room.url);
     
+    if (this.room.qr) {
+      document.getElementById('room-qr').src = this.room.qr;
+    }
+    
     this.setSize({
       'width': this.room.width,
       'height': this.room.height
@@ -240,7 +248,7 @@ var Client = (function Client() {
   };
 
   Client.prototype.removePlayerToClient = function removePlayerToClient(data) {
-    console.warn('...removeplayer...');
+    
   };
   
   Client.prototype.removePuppetToClient = function removePuppetToClient(puppetId) {
