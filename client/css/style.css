@@ -97,8 +97,16 @@ a {
   transform: translateX(-50%);
 }
 
+.chat {
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
 body:not(.viewer) .viewer-only,
 body:not(.controller) .controller-only,
-body:not(.in-room) .room-only {
+body:not(.in-room) .room-only,
+body:not(.debug) .debug-only {
   display: none;
 }

@@ -50,6 +50,7 @@ function onPlayerConnect(socket) {
   socket.on('flipPuppetFromClient', flipPuppetFromClient.bind(socket));
   socket.on('setMouthStateFromClient', setMouthStateFromClient.bind(socket));
   socket.on('showParticlesFromClient', showParticlesFromClient.bind(socket));
+  socket.on('chatMessageFromClient', chatMessageFromClient.bind(socket));
 }
 
 // Client disconnected
@@ -133,17 +134,19 @@ function showStats() {
 
 // Client changed the size of the room - viewers only
 function resizeRoomFromClient(data) {
-  var playerId = this.id;
-  var room = rooms[playerRooms[playerId] || ''];
-  
-  if (room && room.ownerId === playerId) {
-    room.width = data.width;
-    room.height = data.height;
-  
-    sendToRoomPlayers(room, 'resizeRoomToClient', {
-      'width': room.width,
-      'height': room.height
-    });
+  if (data) {
+    var playerId = this.id;
+    var room = rooms[playerRooms[playerId] || ''];
+    
+    if (room && room.ownerId === playerId) {
+      room.width = data.width || 1920;
+      room.height = data.height || 1080;
+    
+      sendToRoomPlayers(room, 'resizeRoomToClient', {
+        'width': room.width,
+        'height': room.height
+      });
+    }
   }
 }
 
@@ -163,10 +166,12 @@ function movementFromClient(movementData) {
 
 // Client moved the puppet
 function positionFromClient(positionData) {
-  var puppet = getPlayerPuppet(this.id);
-  if (puppet) {
-    puppet.x = positionData.x;
-    puppet.y = positionData.y;
+  if (positionData) {
+    var puppet = getPlayerPuppet(this.id);
+    if (puppet) {
+      puppet.x = positionData.x || 0.5;
+      puppet.y = positionData.y || 0.5;
+    }
   }
 }
 
@@ -182,7 +187,7 @@ function flipPuppetFromClient() {
 function setMouthStateFromClient(isOpen) {
   var puppet = getPlayerPuppet(this.id);
   if (puppet) {
-    puppet.isOpeningMouth = isOpen;
+    puppet.isOpeningMouth = !!isOpen;
   }
 }
 
@@ -194,6 +199,26 @@ function showParticlesFromClient() {
     if (room) {
       sendToRoomPlayers(room, 'showParticlesToClient', {
         'puppetId': puppet.id
+      });
+    }
+  }
+}
+
+// Client sent a text message to their room
+function chatMessageFromClient(data) {
+  if (data && data.text) {
+    var message = data.text;
+    var puppet = getPlayerPuppet(this.id);
+    var room = rooms[playerRooms[this.id]];
+    
+    if (message.length > 80) {
+      message = message.substring(0, 80);
+    }
+    
+    if (room) {
+      sendToRoomPlayers(room, 'chatMessageToClient', {
+        'puppetId': puppet && puppet.id || '',
+        'text': message
       });
     }
   }

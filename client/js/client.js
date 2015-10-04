@@ -19,10 +19,13 @@ var Client = (function Client() {
 
     this.puppets = {};
     this.particles = [];
+    this.chatMessages = [];
     
     this.angleLerpAlpha = 0.5;
     this.mouthOpenPercent = 0.4;
     this.backMouthWidth = 0.5;
+    
+    this.CHAT_TIME_TO_LIVE = 6;
     
     this.didCleanJoinMessage = false;
     
@@ -41,6 +44,8 @@ var Client = (function Client() {
     this.context = this.canvas.getContext('2d');
     this.el.appendChild(this.canvas);
     
+    document.body.querySelector('.chat').addEventListener('click', this.newChatMessage.bind(this));
+    
     this.lastUpdate = Date.now();
     window.requestAnimationFrame(this.tick.bind(this));
     
@@ -55,6 +60,7 @@ var Client = (function Client() {
     this.socket.on('removePlayerToClient', this.removePlayerToClient.bind(this));
     this.socket.on('removePuppetToClient', this.removePuppetToClient.bind(this));
     this.socket.on('showParticlesToClient', this.showParticlesToClient.bind(this));
+    this.socket.on('chatMessageToClient', this.chatMessageToClient.bind(this));
     
     this.roomId = window.location.search.replace('?', '');
     
@@ -72,6 +78,15 @@ var Client = (function Client() {
       });
     } else {
       this.socket.emit('listRoomsFromClient');
+    }
+  };
+  
+  Client.prototype.newChatMessage = function newChatMessage(e) {
+    var message = prompt('Whaddya wanna say?', '');
+    if (message) {
+      this.socket.emit('chatMessageFromClient', {
+        'text': message
+      });
     }
   };
   
@@ -126,9 +141,13 @@ var Client = (function Client() {
     Controller.tick(this.dt);
     
     var context = this.context;
+    var ratio = this.ratio;
     var maxMouthOpen = this.mouthOpenPercent;
     
     context.clearRect(0, 0, this.width, this.height);
+    context.shadowColor = 'rgba(0, 0, 0, 0)';
+    context.shadowBlur = 0;
+    context.lineWidth = 0;
     
     for (var i = 0, len = this.particles.length; i < len; i++) {
       var particles = this.particles[i];
@@ -149,7 +168,6 @@ var Client = (function Client() {
 
       puppet.angle += (puppet.targetAngle - puppet.angle) * this.angleLerpAlpha;
       
-      var ratio = this.ratio;
       var x = puppet.x * this.width;
       var y = puppet.y * this.height;
       var w = puppet.width * ratio;
@@ -195,7 +213,38 @@ var Client = (function Client() {
       
       context.restore();
     }
+      
     
+    
+    context.fillStyle = 'rgba(255, 255, 255, 1)';
+    context.shadowColor = 'rgba(0, 0, 0, .7)';
+    context.shadowBlur = 7;
+    context.lineWidth = 2;
+    
+    for (var i = 0, len = this.chatMessages.length; i < len; i++) {
+      var chat = this.chatMessages[i];
+      if (chat) {
+        var x = this.width / 2;
+        var y = this.height - 10;
+        
+        if (chat.puppetId) {
+          var puppet = this.puppets[chat.puppetId];
+          if (puppet) {
+            x = puppet.x * this.width;
+            y = puppet.y * this.height - puppet.height / 2 * ratio - 6;
+          }
+        }
+        
+        context.strokeText(chat.text, x, y);
+        context.fillText(chat.text, x, y);
+        
+        chat.timeToLive -= this.dt;
+        if (chat.timeToLive <= 0) {
+          this.chatMessages.splice(i, 1);
+        }
+      }
+    }
+
     this.lastUpdate = now;
     window.requestAnimationFrame(this.tick.bind(this));
   };
@@ -279,6 +328,24 @@ var Client = (function Client() {
     }
   };
 
+  Client.prototype.chatMessageToClient = function chatMessageToClient(data) {
+    // Remove old message by puppet, if one exists
+    if (data.puppetId) {
+      for (var i = 0, len = this.chatMessages.length; i < len; i++) {
+        if (this.chatMessages[i] && this.chatMessages[i].puppetId === data.puppetId) {
+          this.chatMessages.splice(i, 1);
+          break;
+        }
+      }
+    }
+    
+    this.chatMessages.push({
+      'text': data.text,
+      'puppetId': data.puppetId,
+      'timeToLive': this.CHAT_TIME_TO_LIVE
+    });
+  };
+
   Client.prototype.removePlayerToClient = function removePlayerToClient(data) {
     
   };
@@ -297,6 +364,9 @@ var Client = (function Client() {
     this.canvas.style.marginLeft = -this.width / 2 + 'px';
     this.canvas.style.width = this.width + 'px';
     this.canvas.style.height = this.height + 'px';
+    this.context.textAlign = 'center';
+    this.context.font = '15px Arial';
+    this.context.strokeStyle = 'rgba(0, 0, 0, 1)';
   };
   
   Client.prototype.getPossessedPuppet = function getPossessedPuppet() {
