@@ -15,6 +15,7 @@ canvas {
   left: 50%;
   width: 0;
   height: 0;
+  background: -webkit-linear-gradient(#E2E1C6, #DAC7C7);
   background: linear-gradient(to bottom, #E2E1C6, #DAC7C7);
 }
 #info {
@@ -46,14 +47,17 @@ a {
   padding: 10px;
   border-radius: 5px;
   border: 1px solid #999;
+  background: -webkit-linear-gradient(#ddd, #aaa);
   background: linear-gradient(to bottom, #ddd, #aaa);
   box-shadow: 0 0 0 1px rgba(255, 255, 255, .3) inset;
 }
 .button:hover {
+  background: -webkit-linear-gradient(#eee, #bbb);
   background: linear-gradient(to bottom, #eee, #bbb);
 }
 .button.active,
 .button:active {
+  background: -webkit-linear-gradient(#bbb, #888);
   background: linear-gradient(to bottom, #bbb, #888);
 }
 

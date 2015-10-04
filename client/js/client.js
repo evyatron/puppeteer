@@ -571,3 +571,9 @@ var TimedButton = (function TimedButton() {
   
   return TimedButton;
 }());
+
+if (!window.requestAnimationFrame) {
+  window.requestAnimationFrame = function rafPolyfill(callback) {
+    window.setTimeout(callback, 1000 / 60);
+  };
+}
