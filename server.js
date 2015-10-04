@@ -20,7 +20,7 @@ var BASE_URL = 'http://puppeteer.evyatron.c9.io/';
 var NUMBER_OF_PUPPETS_PER_GAME = Infinity;
 var DEBUG_LEVEL = 1;
 var GAME_ID_LENGTH = 3;
-var MOUTH_OPEN_SPEED = 10;
+var MOUTH_OPEN_SPEED = 13;
 var TIME_TO_REPORT_STATS = 15;
 var GAME_LOOP_RATE = 1000 / 30;
 
