@@ -16,12 +16,12 @@ var io = socketio.listen(server);
 router.use(express.static(path.resolve(__dirname, 'client')));
 
 
-
+var BASE_URL = 'http://puppeteer.evyatron.c9.io/';
 var NUMBER_OF_PUPPETS_PER_GAME = Infinity;
 var DEBUG_LEVEL = 1;
 var GAME_ID_LENGTH = 3;
 var MOUTH_OPEN_SPEED = 10;
-var TIME_TO_REPORT_STATS = 10;
+var TIME_TO_REPORT_STATS = 15;
 var GAME_LOOP_RATE = 1000 / 30;
 
 
@@ -310,7 +310,7 @@ function createGameFromClient(data) {
   var gameId = generateGameId();
   var game = {
     'id': gameId,
-    'url': 'http://pupeteer.evyatron.c9.io/?' + gameId,
+    'url': BASE_URL + '?' + gameId,
     'ownerId': playerId,
     'width': data.width,
     'height': data.height,
