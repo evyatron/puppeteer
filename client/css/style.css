@@ -15,7 +15,7 @@ canvas {
   left: 50%;
   width: 0;
   height: 0;
-  background: linear-gradient(to bottom, #a0f0ff, #70d0df);
+  background: linear-gradient(to bottom, #E2E1C6, #DAC7C7);
 }
 #info {
   position: relative;

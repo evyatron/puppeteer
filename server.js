@@ -256,6 +256,8 @@ function addPuppetFromClient(data) {
     'puppetId': puppet.id
   });
   
+  sendIdlePlayersRooms();
+  
   console.info('Create puppet and send to player', puppet.id, playerId);
   
   return true;
