@@ -7,6 +7,7 @@ var Client = (function Client() {
     
     this.socket;
     
+    this.gameId;
     this.canvas;
     this.context;
     this.lastUpdate = 0;
@@ -51,18 +52,22 @@ var Client = (function Client() {
     this.socket.on('removePlayerToClient', this.removePlayerToClient.bind(this));
     this.socket.on('removePuppetToClient', this.removePuppetToClient.bind(this));
     
-    var gameId = window.location.search.replace('?', '');
+    this.gameId = window.location.search.replace('?', '');
     
     if ('ontouchstart' in window) {
-      Controller.init(this, gameId);
+      Controller.init(this, this.gameId);
     } else {
-      Viewer.init(this, gameId);
+      Viewer.init(this, this.gameId);
     }
     
-    if (gameId) {
+    if (this.gameId) {
+      document.body.classList.add('in-game');
+      
       this.socket.emit('connectToGameFromClient', {
-        'gameId': gameId
+        'gameId': this.gameId
       });
+    } else {
+      this.socket.emit('listGamesFromClient');
     }
   };
   
@@ -76,6 +81,10 @@ var Client = (function Client() {
   };
   
   Client.prototype.listGamesToClient = function listGamesToClient(data) {
+    if (this.gameId) {
+      return;
+    }
+    
     var games = data.games;
     var html = '<h2>Please select from one of the active games:</h2>';
     
@@ -92,9 +101,20 @@ var Client = (function Client() {
               '</div>';
     }
     
+    html += '<div class="create-message create button viewer-only">Or create a new one!</div>';
+    html += '<div class="create-message controller-only">Or create a new onefrom your PC!</div>';
+    
     document.getElementById('game').innerHTML = html;
+    document.querySelector('#game .create').addEventListener('click', this.createGame.bind(this));
   };
-
+  
+  Client.prototype.createGame = function createGame() {
+    this.socket.emit('createGameFromClient', {
+      'width': window.innerWidth,
+      'height': window.innerHeight
+    });
+  };
+  
   Client.prototype.tick = function tick() {
     var now = Date.now();
     this.dt = (now - this.lastUpdate) / 1000;
@@ -276,25 +296,22 @@ var Controller = (function Controller() {
     this.client = client;
     
     document.body.classList.add('controller');
-
-    if (!gameId) {
-      this.client.socket.emit('listGamesFromClient');
-      return;
-    }
     
-    this.client.socket.on('resizeGameToClient', this.client.setSize.bind(this.client));
-    this.client.socket.on('possessPuppetToClient', this.possessPuppetToClient.bind(this));
-    this.client.canvas.addEventListener('touchstart', this.onTouchStart.bind(this));
-    this.client.canvas.addEventListener('touchmove', this.onTouchMove.bind(this));
-    this.client.canvas.addEventListener('touchend', this.onTouchEnd.bind(this));
-
-    this.mouthOpener = new TimedButton({
-      'el': document.body.querySelector('.button.open-mouth'),
-      'onDown': this.onMouthOpenerPressed.bind(this),
-      'onUp': this.onMouthOpenerReleased.bind(this)
-    });
-
-    window.addEventListener('deviceorientation', this.gotDeviceMotion.bind(this));
+    if (gameId) {
+      this.client.socket.on('resizeGameToClient', this.client.setSize.bind(this.client));
+      this.client.socket.on('possessPuppetToClient', this.possessPuppetToClient.bind(this));
+      this.client.canvas.addEventListener('touchstart', this.onTouchStart.bind(this));
+      this.client.canvas.addEventListener('touchmove', this.onTouchMove.bind(this));
+      this.client.canvas.addEventListener('touchend', this.onTouchEnd.bind(this));
+  
+      this.mouthOpener = new TimedButton({
+        'el': document.body.querySelector('.button.open-mouth'),
+        'onDown': this.onMouthOpenerPressed.bind(this),
+        'onUp': this.onMouthOpenerReleased.bind(this)
+      });
+  
+      window.addEventListener('deviceorientation', this.gotDeviceMotion.bind(this));
+    }
   };
   
   Controller.prototype.onMouthOpenerPressed = function onMouthOpenerPressed() {
@@ -413,13 +430,8 @@ var Viewer = (function Viewer() {
     
     document.body.classList.add('viewer');
 
-    window.addEventListener('resize', this.onResize.bind(this));
-    
-    if (!gameId) {
-      this.client.socket.emit('createGameFromClient', {
-        'width': window.innerWidth,
-        'height': window.innerHeight
-      });
+    if (gameId) {
+      window.addEventListener('resize', this.onResize.bind(this));
     }
   };
   

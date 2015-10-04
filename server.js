@@ -6,7 +6,6 @@ var path = require('path');
 var socketio = require('socket.io');
 var express = require('express');
 var gameloop = require('node-gameloop');
-var uuid = require('node-uuid');
 var QRCode = require('qrcode');
 
 var router = express();
@@ -80,6 +79,8 @@ function onPlayerDisconnect() {
   
   delete playerGames[playerId];
   delete players[playerId];
+  
+  sendIdlePlayersGames();
 }
 
 // Main game loop - update all puppets and send to all clients
@@ -113,19 +114,20 @@ function showStats() {
   var seconds = now.getSeconds();
   var numViewers = 0;
   var numControllers = 0;
+  var numIdle = 0;
   
   (hours < 10) && (hours = '0' + hours);
   (minutes < 10) && (minutes = '0' + minutes);
   (seconds < 10) && (seconds = '0' + seconds);
   
   for (var playerId in players) {
-    getPlayerPuppet(playerId)? numControllers++ : numViewers++;
+    playerGames[playerId]? getPlayerPuppet(playerId)? numControllers++ : numViewers++ : numIdle++;
   }
 
   console.info('[' + hours + ':' + minutes + ':' + seconds + '] Stats: ' +
                len(games) + ' Games | ' +
                len(players) + ' Players ' +
-               '(' + numViewers + ' viewers, ' + numControllers + ' controllers)');
+               '(' + numIdle + ' idle, ' + numViewers + ' viewers, ' + numControllers + ' controllers)');
 }
 
 // Client changed the size of the game - viewers only
@@ -215,7 +217,7 @@ function addPuppetFromClient(data) {
   }
 
   var puppet = {
-    'id': 'puppet_' + uuid.v4(),
+    'id': 'puppet_' + game.id + '_' + game.numberOfPuppets,
     'width': 200,
     'height': 200,
     'isFlipped': false,
@@ -316,11 +318,26 @@ function createGameFromClient(data) {
     
     connectPlayerToGame(playerId, game.id);
   });
+  
+  sendIdlePlayersGames();
+}
+
+function sendIdlePlayersGames() {
+  for (var playerId in players) {
+    if (!playerGames[playerId]) {
+      listGamesToClient(players[playerId]);
+    }
+  }
 }
 
 // Client requested a list of games
 function listGamesFromClient() {
-  this.emit('listGamesToClient', {
+  listGamesToClient(this);
+}
+
+// Client requested a list of games
+function listGamesToClient(player) {
+  player.emit('listGamesToClient', {
     'games': games
   });
 }

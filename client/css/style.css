@@ -4,6 +4,7 @@ body, div, h2, ul, li, canvas {
 }
 
 body {
+  font: normal 12px Arial;
   -webkit-user-select: none;
   overflow: hidden;
 }
@@ -19,7 +20,6 @@ canvas {
 #game {
   position: relative;
   padding: 5px;
-  font-size: .9em;
   z-index: 10;
 }
 h2 {
@@ -34,17 +34,33 @@ a {
   color: #fff;
   background: #600;
 }
+.github {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  padding: 2px;
+}
 
 .button {
+  cursor: pointer;
   padding: 10px;
   border-radius: 5px;
   border: 1px solid #999;
   background: linear-gradient(to bottom, #ddd, #aaa);
   box-shadow: 0 0 0 1px rgba(255, 255, 255, .3) inset;
 }
+.button:hover {
+  background: linear-gradient(to bottom, #eee, #bbb);
+}
 .button.active,
 .button:active {
   background: linear-gradient(to bottom, #bbb, #888);
+}
+
+.create-message {
+  margin-top: 30px;
+  font-size: 1.2em;
+  display: inline-block;
 }
 
 .open-mouth {
@@ -56,6 +72,7 @@ a {
 }
 
 body:not(.viewer) .viewer-only,
-body:not(.controller) .controller-only {
+body:not(.controller) .controller-only,
+body:not(.in-game) .game-only {
   display: none;
 }
