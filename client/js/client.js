@@ -1,5 +1,7 @@
 /*
   global io
+  global Particles
+  global Victor
 */
 var Client = (function Client() {
   function Client(options) {
@@ -16,6 +18,7 @@ var Client = (function Client() {
     this.possessedPuppetId;
 
     this.puppets = {};
+    this.particles = [];
     
     this.angleLerpAlpha = 0.5;
     this.mouthOpenPercent = 0.4;
@@ -51,6 +54,7 @@ var Client = (function Client() {
     this.socket.on('roomPuppetsToClient', this.roomPuppetsToClient.bind(this));
     this.socket.on('removePlayerToClient', this.removePlayerToClient.bind(this));
     this.socket.on('removePuppetToClient', this.removePuppetToClient.bind(this));
+    this.socket.on('showParticlesToClient', this.showParticlesToClient.bind(this));
     
     this.roomId = window.location.search.replace('?', '');
     
@@ -125,6 +129,18 @@ var Client = (function Client() {
     var maxMouthOpen = this.mouthOpenPercent;
     
     context.clearRect(0, 0, this.width, this.height);
+    
+    for (var i = 0, len = this.particles.length; i < len; i++) {
+      var particles = this.particles[i];
+      if (particles) {
+        if (particles.isRunning) {
+          particles.update(this.dt);
+          particles.draw(context);
+        } else {
+          this.particles.splice(i, 1);
+        }
+      }
+    }
 
     for (var id in this.puppets) {
       var puppet = this.puppets[id];
@@ -247,6 +263,22 @@ var Client = (function Client() {
     puppet.targetAngle = puppet.angle = puppet.movementData.alpha || 0;
   };
 
+  Client.prototype.showParticlesToClient = function showParticlesToClient(data) {
+    var puppet = this.puppets[data.puppetId];
+    if (puppet) {
+      this.particles.push(new Particles({
+        'canvas': this.canvas,
+        'position': new Victor(puppet.x * this.width, puppet.y * this.height),
+        'lifetime': [0.4, 0.8],
+        'angle': [0, 360],
+        'speed': [200 * this.ratio, 300 * this.ratio],
+        'size': [2, 6],
+        'gravity': 0,
+        'colours': [puppet.colour, puppet.colour, puppet.colour, 'white']
+      }).start(250));
+    }
+  };
+
   Client.prototype.removePlayerToClient = function removePlayerToClient(data) {
     
   };
@@ -317,7 +349,9 @@ var Controller = (function Controller() {
         'onDown': this.onMouthOpenerPressed.bind(this),
         'onUp': this.onMouthOpenerReleased.bind(this)
       });
-  
+      
+      document.querySelector('.particles').addEventListener('click', this.addParticles.bind(this));
+      
       window.addEventListener('deviceorientation', this.gotDeviceMotion.bind(this));
     }
   };
@@ -338,6 +372,10 @@ var Controller = (function Controller() {
   
   Controller.prototype.possessPuppetToClient = function possessPuppetToClient(data) {
     this.possessedPuppetId = data.puppetId;
+  };
+  
+  Controller.prototype.addParticles = function addParticles() {
+    this.client.socket.emit('showParticlesFromClient');
   };
   
   Controller.prototype.tick = function tick(dt) {

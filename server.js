@@ -49,6 +49,7 @@ function onPlayerConnect(socket) {
   socket.on('positionFromClient', positionFromClient.bind(socket));
   socket.on('flipPuppetFromClient', flipPuppetFromClient.bind(socket));
   socket.on('setMouthStateFromClient', setMouthStateFromClient.bind(socket));
+  socket.on('showParticlesFromClient', showParticlesFromClient.bind(socket));
 }
 
 // Client disconnected
@@ -182,6 +183,19 @@ function setMouthStateFromClient(isOpen) {
   var puppet = getPlayerPuppet(this.id);
   if (puppet) {
     puppet.isOpeningMouth = isOpen;
+  }
+}
+
+// Client asked to show particles!
+function showParticlesFromClient() {
+  var puppet = getPlayerPuppet(this.id);
+  if (puppet) {
+    var room = rooms[playerRooms[this.id]];
+    if (room) {
+      sendToRoomPlayers(room, 'showParticlesToClient', {
+        'puppetId': puppet.id
+      });
+    }
   }
 }
 

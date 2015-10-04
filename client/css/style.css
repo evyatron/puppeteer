@@ -69,6 +69,14 @@ a {
   padding: 5px;
   z-index: 15;
 }
+.particles {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 50px;
+  height: 50px;
+  z-index: 15;
+}
 
 #room-qr {
   position: absolute;
