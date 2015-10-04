@@ -17,7 +17,7 @@ canvas {
   height: 0;
   background: linear-gradient(to bottom, #a0f0ff, #70d0df);
 }
-#game {
+#info {
   position: relative;
   padding: 5px;
   z-index: 10;
@@ -62,6 +62,12 @@ a {
   font-size: 1.2em;
   display: inline-block;
 }
+.back {
+  position: absolute;
+  top: 0;
+  right: 0;
+  padding: 5px;
+}
 
 .open-mouth {
   position: absolute;
@@ -73,6 +79,6 @@ a {
 
 body:not(.viewer) .viewer-only,
 body:not(.controller) .controller-only,
-body:not(.in-game) .game-only {
+body:not(.in-room) .room-only {
   display: none;
 }

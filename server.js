@@ -16,17 +16,17 @@ router.use(express.static(path.resolve(__dirname, 'client')));
 
 // Config
 var BASE_URL = 'http://puppeteer.evyatron.c9.io/';
-var NUMBER_OF_PUPPETS_PER_GAME = Infinity;
+var NUMBER_OF_PUPPETS_PER_ROOM = Infinity;
 var DEBUG_LEVEL = 1;
-var GAME_ID_LENGTH = 3;
+var ROOM_ID_LENGTH = 3;
 var MOUTH_OPEN_SPEED = 13;
 var TIME_TO_REPORT_STATS = 15;
 var GAME_LOOP_RATE = 1000 / 30;
 
 // Stuff
 var timeToReportStats = TIME_TO_REPORT_STATS;
-var games = {};
-var playerGames = {};
+var rooms = {};
+var playerRooms = {};
 var players = {};
 
 // Client connected - listen to all events
@@ -38,11 +38,11 @@ function onPlayerConnect(socket) {
   players[playerId] = socket;
 
   socket.on('disconnect', onPlayerDisconnect.bind(socket));
-  socket.on('listGamesFromClient', listGamesFromClient.bind(socket));
-  socket.on('connectToGameFromClient', connectToGameFromClient.bind(socket));
+  socket.on('listRoomsFromClient', listRoomsFromClient.bind(socket));
+  socket.on('connectToRoomFromClient', connectToRoomFromClient.bind(socket));
   
-  socket.on('createGameFromClient', createGameFromClient.bind(socket));
-  socket.on('resizeGameFromClient', resizeGameFromClient.bind(socket));
+  socket.on('createRoomFromClient', createRoomFromClient.bind(socket));
+  socket.on('resizeRoomFromClient', resizeRoomFromClient.bind(socket));
   
   socket.on('addPuppetFromClient', addPuppetFromClient.bind(socket));
   socket.on('movementFromClient', movementFromClient.bind(socket));
@@ -57,37 +57,37 @@ function onPlayerDisconnect() {
   
   console.info('Player disconnect:', playerId);
   
-  for (var gameId in games) {
-    var game = games[gameId];
+  for (var roomId in rooms) {
+    var room = rooms[roomId];
     
-    if (game.playerIds.indexOf(playerId) !== -1) {
-      sendToGamePlayers(game, 'removePlayerToClient', playerId);
-      game.playerIds.splice(game.playerIds.indexOf(playerId), 1);
+    if (room.playerIds.indexOf(playerId) !== -1) {
+      sendToRoomPlayers(room, 'removePlayerToClient', playerId);
+      room.playerIds.splice(room.playerIds.indexOf(playerId), 1);
     }
     
-    var gamePuppetId = game.playerPuppets[playerId];
-    if (gamePuppetId) {
-      delete game.puppets[gamePuppetId];
-      delete game.playerPuppets[playerId];
-      game.numberOfPuppets--;
+    var roomPuppetId = room.playerPuppets[playerId];
+    if (roomPuppetId) {
+      delete room.puppets[roomPuppetId];
+      delete room.playerPuppets[playerId];
+      room.numberOfPuppets--;
     }
     
-    if (game.playerIds.length === 0) {
-      delete games[gameId];
+    if (room.playerIds.length === 0) {
+      delete rooms[roomId];
     }
   }
   
-  delete playerGames[playerId];
+  delete playerRooms[playerId];
   delete players[playerId];
   
-  sendIdlePlayersGames();
+  sendIdlePlayersRooms();
 }
 
 // Main game loop - update all puppets and send to all clients
 function gameLoop(dt) {
-  for (var id in games) {
-    var game = games[id];
-    var puppets = games[id].puppets;
+  for (var id in rooms) {
+    var room = rooms[id];
+    var puppets = rooms[id].puppets;
     
     for (var puppetId in puppets) {
       var puppet = puppets[puppetId];
@@ -96,7 +96,7 @@ function gameLoop(dt) {
       puppet.mouthOpen = Math.max(Math.min(puppet.mouthOpen + mouthOpenChange, 1), 0);
     }
     
-    sendToGamePlayers(game, 'gamePuppetsToClient', puppets);
+    sendToRoomPlayers(room, 'roomPuppetsToClient', puppets);
   }
   
   timeToReportStats -= dt;
@@ -121,27 +121,27 @@ function showStats() {
   (seconds < 10) && (seconds = '0' + seconds);
   
   for (var playerId in players) {
-    playerGames[playerId]? getPlayerPuppet(playerId)? numControllers++ : numViewers++ : numIdle++;
+    playerRooms[playerId]? getPlayerPuppet(playerId)? numControllers++ : numViewers++ : numIdle++;
   }
 
   console.info('[' + hours + ':' + minutes + ':' + seconds + '] Stats: ' +
-               len(games) + ' Games | ' +
+               len(rooms) + ' Rooms | ' +
                len(players) + ' Players ' +
                '(' + numIdle + ' idle, ' + numViewers + ' viewers, ' + numControllers + ' controllers)');
 }
 
-// Client changed the size of the game - viewers only
-function resizeGameFromClient(data) {
+// Client changed the size of the room - viewers only
+function resizeRoomFromClient(data) {
   var playerId = this.id;
-  var game = games[playerGames[playerId] || ''];
+  var room = rooms[playerRooms[playerId] || ''];
   
-  if (game && game.ownerId === playerId) {
-    game.width = data.width;
-    game.height = data.height;
+  if (room && room.ownerId === playerId) {
+    room.width = data.width;
+    room.height = data.height;
   
-    sendToGamePlayers(game, 'resizeGameToClient', {
-      'width': game.width,
-      'height': game.height
+    sendToRoomPlayers(room, 'resizeRoomToClient', {
+      'width': room.width,
+      'height': room.height
     });
   }
 }
@@ -187,12 +187,12 @@ function setMouthStateFromClient(isOpen) {
 
 // Gets the puppet associated with a player
 function getPlayerPuppet(playerId) {
-  var game = games[playerGames[playerId] || ''];
-  if (!game) {
+  var room = rooms[playerRooms[playerId] || ''];
+  if (!room) {
     return null;
   }
   
-  var puppet = game.puppets[game.playerPuppets[playerId]];
+  var puppet = room.puppets[room.playerPuppets[playerId]];
   if (!puppet) {
     return null;
   }
@@ -204,20 +204,20 @@ function getPlayerPuppet(playerId) {
 function addPuppetFromClient(data) {
   var playerId = this.id;
   var player = players[playerId];
-  var game = games[playerGames[playerId]];
+  var room = rooms[playerRooms[playerId]];
   
-  if (!player || !game) {
-    console.warn('addPuppetFromClient | missing player info', playerId, playerGames[playerId], game);
+  if (!player || !room) {
+    console.warn('addPuppetFromClient | missing player info', playerId, playerRooms[playerId], room);
     return false;
   }
   
-  if (game.numberOfPuppets >= NUMBER_OF_PUPPETS_PER_GAME) {
-    console.warn('Maximum puppets reached per game', game);
+  if (room.numberOfPuppets >= NUMBER_OF_PUPPETS_PER_ROOM) {
+    console.warn('Maximum puppets reached per room', room);
     return false;
   }
 
   var puppet = {
-    'id': 'puppet_' + game.id + '_' + game.numberOfPuppets,
+    'id': 'puppet_' + room.id + '_' + room.numberOfPuppets,
     'width': 200,
     'height': 200,
     'isFlipped': false,
@@ -227,14 +227,14 @@ function addPuppetFromClient(data) {
     'colour': 'rgb(' + randInt(50, 200) + ',' + randInt(50, 200) + ',' + randInt(50, 200) + ')',
     'movementData': {}
   };
-  puppet.x = rand(puppet.width / game.width, 1 - puppet.width / game.width),
-  puppet.y = rand(puppet.height / game.height, 1 - puppet.height / game.height),
+  puppet.x = rand(puppet.width / room.width, 1 - puppet.width / room.width),
+  puppet.y = rand(puppet.height / room.height, 1 - puppet.height / room.height),
   
-  game.numberOfPuppets++;
-  game.puppets[puppet.id] = puppet;
-  game.playerPuppets[playerId] = puppet.id;
+  room.numberOfPuppets++;
+  room.puppets[puppet.id] = puppet;
+  room.playerPuppets[playerId] = puppet.id;
   
-  sendToGamePlayers(game, 'addPuppetToClient', {
+  sendToRoomPlayers(room, 'addPuppetToClient', {
     'puppet': puppet
   });
   
@@ -247,56 +247,56 @@ function addPuppetFromClient(data) {
   return true;
 }
 
-// Helper method to send a message to all the players in a game
-function sendToGamePlayers(game, message, data) {
-  for (var i = 0, len = game.playerIds.length; i < len; i++) {
-    var player = players[game.playerIds[i]];
+// Helper method to send a message to all the players in a room
+function sendToRoomPlayers(room, message, data) {
+  for (var i = 0, len = room.playerIds.length; i < len; i++) {
+    var player = players[room.playerIds[i]];
     if (player) {
       player.emit(message, data);
     }
   }
 }
 
-// Client requested to join a game
-function connectToGameFromClient(data) {
-  connectPlayerToGame(this.id, data.gameId);
+// Client requested to join a room
+function connectToRoomFromClient(data) {
+  connectPlayerToRoom(this.id, data.roomId);
 }
 
-// Connect a client to a game
-function connectPlayerToGame(playerId, gameId) {
+// Connect a client to a room
+function connectPlayerToRoom(playerId, roomId) {
   var player = players[playerId];
-  var game = games[gameId];
+  var room = rooms[roomId];
   
   if (!player) {
-    console.warn('connectPlayerToGame Empty player', playerId);
+    console.warn('connectPlayerToRoom Empty player', playerId);
     return false;
   }
   
-  if (!game) {
+  if (!room) {
     player.emit('errorToClient', {
       'code': 1,
-      'message': 'Trying to join an invalid game'
+      'message': 'Trying to join an invalid room'
     });
     
-    console.warn('Trying to join an invalid game');
+    console.warn('Trying to join an invalid room');
     return;
   }
   
-  console.info('connectPlayerToGame', playerId, gameId);
+  console.info('connectPlayerToRoom', playerId, roomId);
   
-  game.playerIds.push(playerId);
-  playerGames[playerId] = gameId;
+  room.playerIds.push(playerId);
+  playerRooms[playerId] = roomId;
   
-  player.emit('gameInfoToClient', {
-    'game': game
+  player.emit('roomInfoToClient', {
+    'room': room
   });
 }
 
-// Client wants to create a new game
-function createGameFromClient(data) {
+// Client wants to create a new room
+function createRoomFromClient(data) {
   var playerId = this.id;
-  var game = {
-    'id': generateGameId(),
+  var room = {
+    'id': generateRoomId(),
     'ownerId': playerId,
     'width': data.width,
     'height': data.height,
@@ -306,55 +306,55 @@ function createGameFromClient(data) {
     'numberOfPuppets': 0,
     'qr': ''
   };
-  game.url = BASE_URL + '?' + game.id;
-  games[game.id] = game;
+  room.url = BASE_URL + '?' + room.id;
+  rooms[room.id] = room;
   
-  console.info('Create new game', game.id);
+  console.info('Create new room', room.id);
   
-  QRCode.toDataURL(game.url, function onQRReady(err, url) {
+  QRCode.toDataURL(room.url, function onQRReady(err, url) {
     if (!err) {
-      game.qr = url;
+      room.qr = url;
     }
     
-    connectPlayerToGame(playerId, game.id);
+    connectPlayerToRoom(playerId, room.id);
   });
   
-  sendIdlePlayersGames();
+  sendIdlePlayersRooms();
 }
 
-function sendIdlePlayersGames() {
+function sendIdlePlayersRooms() {
   for (var playerId in players) {
-    if (!playerGames[playerId]) {
-      listGamesToClient(players[playerId]);
+    if (!playerRooms[playerId]) {
+      listRoomsToClient(players[playerId]);
     }
   }
 }
 
-// Client requested a list of games
-function listGamesFromClient() {
-  listGamesToClient(this);
+// Client requested a list of rooms
+function listRoomsFromClient() {
+  listRoomsToClient(this);
 }
 
-// Client requested a list of games
-function listGamesToClient(player) {
-  player.emit('listGamesToClient', {
-    'games': games
+// Client requested a list of rooms
+function listRoomsToClient(player) {
+  player.emit('listRoomsToClient', {
+    'rooms': rooms
   });
 }
 
-// Generate a game id
-function generateGameId() {
-  var gameId = '';
+// Generate a room id
+function generateRoomId() {
+  var roomId = '';
   var symbols = ['a','b','c','d','e','f','g','h','i','j','k','l','m',
                  'n','o','p','q','r','s','t','u','v','w','x','y','z'];
   
   do {
-    for (var i = 0; i < GAME_ID_LENGTH; i++) {
-      gameId += symbols[Math.floor(Math.random() * symbols.length)];
+    for (var i = 0; i < ROOM_ID_LENGTH; i++) {
+      roomId += symbols[Math.floor(Math.random() * symbols.length)];
     }
-  } while (games[gameId])
+  } while (rooms[roomId])
   
-  return gameId;
+  return roomId;
 }
 
 /* Utils */

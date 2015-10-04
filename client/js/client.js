@@ -7,7 +7,7 @@ var Client = (function Client() {
     
     this.socket;
     
-    this.gameId;
+    this.roomId;
     this.canvas;
     this.context;
     this.lastUpdate = 0;
@@ -42,32 +42,32 @@ var Client = (function Client() {
     window.requestAnimationFrame(this.tick.bind(this));
     
     this.socket.on('connect', this.connect.bind(this));
-    this.socket.on('listGamesToClient', this.listGamesToClient.bind(this));
+    this.socket.on('listRoomsToClient', this.listRoomsToClient.bind(this));
     this.socket.on('errorToClient', this.errorToClient.bind(this));
   };
   
   Client.prototype.connect = function connect(data) {
-    this.socket.on('gameInfoToClient', this.gameInfoToClient.bind(this));
-    this.socket.on('gamePuppetsToClient', this.gamePuppetsToClient.bind(this));
+    this.socket.on('roomInfoToClient', this.roomInfoToClient.bind(this));
+    this.socket.on('roomPuppetsToClient', this.roomPuppetsToClient.bind(this));
     this.socket.on('removePlayerToClient', this.removePlayerToClient.bind(this));
     this.socket.on('removePuppetToClient', this.removePuppetToClient.bind(this));
     
-    this.gameId = window.location.search.replace('?', '');
+    this.roomId = window.location.search.replace('?', '');
     
     if ('ontouchstart' in window) {
-      Controller.init(this, this.gameId);
+      Controller.init(this, this.roomId);
     } else {
-      Viewer.init(this, this.gameId);
+      Viewer.init(this, this.roomId);
     }
     
-    if (this.gameId) {
-      document.body.classList.add('in-game');
+    if (this.roomId) {
+      document.body.classList.add('in-room');
       
-      this.socket.emit('connectToGameFromClient', {
-        'gameId': this.gameId
+      this.socket.emit('connectToRoomFromClient', {
+        'roomId': this.roomId
       });
     } else {
-      this.socket.emit('listGamesFromClient');
+      this.socket.emit('listRoomsFromClient');
     }
   };
   
@@ -77,22 +77,22 @@ var Client = (function Client() {
                   '<a href="/">Go back to create a new one</a>' +
                 '</div>';
     
-    document.getElementById('game').innerHTML = html;
+    document.getElementById('info').innerHTML = html;
   };
   
-  Client.prototype.listGamesToClient = function listGamesToClient(data) {
-    if (this.gameId) {
+  Client.prototype.listRoomsToClient = function listRoomsToClient(data) {
+    if (this.roomId) {
       return;
     }
     
-    var games = data.games;
-    var html = '<h2>Please select from one of the active games:</h2>';
+    var rooms = data.rooms;
+    var html = '<h2>Please select from one of the active rooms:</h2>';
     
-    for (var id in games) {
-      var game = games[id];
+    for (var id in rooms) {
+      var room = rooms[id];
       var url = 'http://' + window.location.host + '/?' + id;
-      var numPuppets = Object.keys(game.puppets).length;
-      var numPlayers = game.playerIds.length;
+      var numPuppets = Object.keys(room.puppets).length;
+      var numPlayers = room.playerIds.length;
       
       html += '<div>' +
                 '<a href="' + url + '">' + url + '</a> - ' + 
@@ -104,12 +104,12 @@ var Client = (function Client() {
     html += '<div class="create-message create button viewer-only">Or create a new one!</div>';
     html += '<div class="create-message controller-only">Or create a new onefrom your PC!</div>';
     
-    document.getElementById('game').innerHTML = html;
-    document.querySelector('#game .create').addEventListener('click', this.createGame.bind(this));
+    document.getElementById('info').innerHTML = html;
+    document.querySelector('#info .create').addEventListener('click', this.createRoom.bind(this));
   };
   
-  Client.prototype.createGame = function createGame() {
-    this.socket.emit('createGameFromClient', {
+  Client.prototype.createRoom = function createRoom() {
+    this.socket.emit('createRoomFromClient', {
       'width': window.innerWidth,
       'height': window.innerHeight
     });
@@ -187,7 +187,7 @@ var Client = (function Client() {
     window.requestAnimationFrame(this.tick.bind(this));
   };
   
-  Client.prototype.gamePuppetsToClient = function gamePuppetsToClient(puppets) {
+  Client.prototype.roomPuppetsToClient = function roomPuppetsToClient(puppets) {
     var puppetId;
     
     for (puppetId in puppets) {
@@ -213,24 +213,24 @@ var Client = (function Client() {
     
     if (!this.didCleanJoinMessage && Object.keys(puppets).length > 0) {
       this.didCleanJoinMessage = true;
-      document.getElementById('game').innerHTML = '';
+      document.getElementById('info').innerHTML = '';
     }
   };
   
-  Client.prototype.gameInfoToClient = function gameInfoToClient(data) {
-    this.game = data.game;
+  Client.prototype.roomInfoToClient = function roomInfoToClient(data) {
+    this.room = data.room;
     
-    console.warn('Got game info', this.game);
+    console.warn('Got room info', this.room);
     
-    window.history.pushState('', '', this.game.url);
+    window.history.pushState('', '', this.room.url);
     
     this.setSize({
-      'width': this.game.width,
-      'height': this.game.height
+      'width': this.room.width,
+      'height': this.room.height
     });
     
-    Viewer.gotGame();
-    Controller.gotGame();
+    Viewer.gotRoom();
+    Controller.gotRoom();
   };
   
   Client.prototype.addNewPuppet = function addNewPuppet(puppet) {
@@ -291,14 +291,14 @@ var Controller = (function Controller() {
     this.timeForTap = 150;
   }
   
-  Controller.prototype.init = function init(client, gameId) {
+  Controller.prototype.init = function init(client, roomId) {
     this.isActive = true;
     this.client = client;
     
     document.body.classList.add('controller');
     
-    if (gameId) {
-      this.client.socket.on('resizeGameToClient', this.client.setSize.bind(this.client));
+    if (roomId) {
+      this.client.socket.on('resizeRoomToClient', this.client.setSize.bind(this.client));
       this.client.socket.on('possessPuppetToClient', this.possessPuppetToClient.bind(this));
       this.client.canvas.addEventListener('touchstart', this.onTouchStart.bind(this));
       this.client.canvas.addEventListener('touchmove', this.onTouchMove.bind(this));
@@ -402,15 +402,15 @@ var Controller = (function Controller() {
     this.touchStart = null;
   };
   
-  Controller.prototype.gotGame = function gotGame() {
+  Controller.prototype.gotRoom = function gotRoom() {
     if (!this.isActive) {
       return;
     }
     
-    document.getElementById('game').innerHTML = 'Connected to game';
+    document.getElementById('info').innerHTML = 'Connected to room';
 
     this.client.socket.emit('addPuppetFromClient', {
-      'type': 'default',
+      'type': 1,
       'name': 'My Puppet'
     });
   };
@@ -424,28 +424,28 @@ var Viewer = (function Viewer() {
     this.client;
   }
   
-  Viewer.prototype.init = function init(client, gameId) {
+  Viewer.prototype.init = function init(client, roomId) {
     this.isActive = true;
     this.client = client;
     
     document.body.classList.add('viewer');
 
-    if (gameId) {
+    if (roomId) {
       window.addEventListener('resize', this.onResize.bind(this));
     }
   };
   
-  Viewer.prototype.gotGame = function gotGame() {
+  Viewer.prototype.gotRoom = function gotRoom() {
     if (!this.isActive) {
       return;
     }
     
-    if (this.client.game.numberOfPuppets === 0) {
-      document.getElementById('game').innerHTML = 'Waiting for players to join...' +
+    if (this.client.room.numberOfPuppets === 0) {
+      document.getElementById('info').innerHTML = 'Waiting for players to join...' +
                                                   '<br />' +
                                                   'Please open this link on your mobile device' +
                                                   '<br />' +
-                                                  '<img src="' + this.client.game.qr + '" />';
+                                                  '<img src="' + this.client.room.qr + '" />';
     }
   };
   
@@ -455,7 +455,7 @@ var Viewer = (function Viewer() {
       'height': window.innerHeight
     };
     
-    this.client.socket.emit('resizeGameFromClient', size);
+    this.client.socket.emit('resizeRoomFromClient', size);
     this.client.setSize(size);
   };
   
